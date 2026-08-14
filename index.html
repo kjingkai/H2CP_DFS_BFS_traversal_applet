@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binary Search Tree &amp; Traversal Applet</title>
+<style>
+  :root{
+    --bg:#f3f5fa;
+    --panel:#ffffff;
+    --border:#e2e8f0;
+    --text:#1e293b;
+    --muted:#64748b;
+    --accent:#2563eb;
+    --accent-dark:#1d4ed8;
+    --pre:#2563eb;
+    --in:#7c3aed;
+    --post:#ea580c;
+    --bfs:#059669;
+    --danger:#dc2626;
+    --ok:#16a34a;
+    --radius:14px;
+    --shadow:0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.06);
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  header{
+    padding:18px 24px 14px;
+    background:linear-gradient(135deg,#1e293b,#334155);
+    color:#f8fafc;
+  }
+  header h1{ margin:0 0 4px; font-size:1.4rem; }
+  header p{ margin:0; color:#cbd5e1; font-size:.92rem; }
+
+  .layout{
+    display:grid;
+    grid-template-columns:280px minmax(0,1fr) 340px;
+    gap:16px;
+    padding:16px;
+    align-items:start;
+  }
+  @media (max-width: 1080px){
+    .layout{ grid-template-columns:1fr; }
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:16px;
+  }
+  .panel + .panel{ margin-top:16px; }
+  .panel h2{
+    margin:0 0 12px; font-size:.95rem; font-weight:700;
+    display:flex; align-items:center; gap:6px;
+  }
+  .panel h3{ margin:14px 0 6px; font-size:.82rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+
+  label{ font-size:.82rem; color:var(--muted); display:block; margin-bottom:4px; }
+  input[type=text], input[type=number]{
+    width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px;
+    font-size:.9rem; background:#f8fafc; color:var(--text);
+  }
+  input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  button{
+    font:inherit; cursor:pointer; border:none; border-radius:9px;
+    padding:8px 12px; font-size:.85rem; font-weight:600;
+    background:#eef2ff; color:#3730a3; transition:filter .15s, transform .05s;
+  }
+  button:hover:not(:disabled){ filter:brightness(0.97); }
+  button:active:not(:disabled){ transform:translateY(1px); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  button.primary{ background:var(--accent); color:#fff; }
+  button.primary:hover:not(:disabled){ background:var(--accent-dark); }
+  button.ghost{ background:transparent; border:1px solid var(--border); color:var(--text); }
+  button.danger{ background:#fef2f2; color:var(--danger); }
+  button.full{ width:100%; }
+
+  .row{ display:flex; gap:8px; }
+  .row > *{ flex:1; }
+  .stack{ display:flex; flex-direction:column; gap:8px; }
+
+  .msg{
+    min-height:18px; font-size:.8rem; margin-top:8px; color:var(--muted);
+  }
+  .msg.err{ color:var(--danger); font-weight:600; }
+  .msg.ok{ color:var(--ok); font-weight:600; }
+
+  details.ref{ border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-top:14px; background:#f8fafc; }
+  details.ref summary{ cursor:pointer; font-weight:700; font-size:.85rem; }
+  details.ref .term{ font-weight:700; }
+  details.ref ul{ margin:8px 0 0; padding-left:18px; font-size:.8rem; color:var(--muted); line-height:1.5; }
+
+  /* ---- center canvas ---- */
+  .canvas-wrap{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:8px; min-height:420px;
+    display:flex; flex-direction:column;
+  }
+  .canvas-scroll{
+    overflow:auto; border-radius:10px; background:
+      radial-gradient(circle at 1px 1px, #e5e9f2 1px, transparent 0) 0 0/18px 18px;
+    flex:1; min-height:380px; display:flex; align-items:flex-start; justify-content:center;
+  }
+  .empty-state{ margin:auto; text-align:center; color:var(--muted); padding:40px; font-size:.95rem; }
+  .empty-state .big{ font-size:2.4rem; margin-bottom:8px; }
+
+  .caption{ text-align:center; font-size:.8rem; color:var(--muted); padding:8px 4px 2px; }
+  .caption b{ color:var(--text); }
+
+  .status-bar{
+    margin-top:10px; padding:10px 12px; border-radius:10px; background:#f1f5f9;
+    font-size:.85rem; color:var(--text); min-height:20px; border:1px solid var(--border);
+  }
+
+  /* ---- svg node styling ---- */
+  .node circle{ fill:#fff; stroke:#94a3b8; stroke-width:2; transition:fill .2s,stroke .2s; }
+  .node text{ font:700 13px "Segoe UI",sans-serif; fill:#1e293b; pointer-events:none; user-select:none; }
+  .node.current circle{ stroke:#2563eb; stroke-width:4; filter:drop-shadow(0 0 5px rgba(37,99,235,.55)); }
+  .node.visited circle{ fill:#bbf7d0; stroke:#16a34a; }
+  .node.queued circle{ fill:#fef08a; stroke:#ca8a04; }
+  .node.wrong-flash circle{ fill:#fecaca !important; stroke:#dc2626 !important; }
+  .node.peek circle{ stroke:#6366f1; stroke-width:3; filter:drop-shadow(0 0 4px rgba(99,102,241,.45)); }
+  .node.peeked circle{ fill:#e0e7ff; stroke:#6366f1; stroke-width:2.5; }
+  .visit-badge{ opacity:0; transition:opacity .15s ease; pointer-events:none; }
+  .visit-badge circle{ fill:#16a34a; stroke:#fff; stroke-width:1.5; }
+  .visit-badge text{ font:700 10px ui-monospace,SFMono-Regular,Menlo,monospace; fill:#fff; }
+  .node.peeked .visit-badge{ opacity:1; }
+  .node.peeked .visit-badge circle{ fill:#6366f1; }
+  .node.visited .visit-badge{ opacity:1; }
+  .node.visited .visit-badge circle{ fill:#16a34a; }
+  .edge{ stroke:#cbd5e1; stroke-width:2; }
+  .node{ cursor:pointer; }
+  .node:hover circle{ stroke:#818cf8; stroke-width:3; }
+  svg.practice-on .node:not(.visited) circle{ stroke-dasharray:4 2; }
+
+  /* ---- right panel: traversal type selector ---- */
+  .type-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
+  .type-btn{
+    background:#f8fafc; border:2px solid var(--border); border-radius:10px;
+    padding:9px 6px; font-size:.82rem; font-weight:700; color:var(--muted);
+  }
+  .type-btn[data-t=pre].active{ border-color:var(--pre); color:var(--pre); background:#eff6ff; }
+  .type-btn[data-t=in].active{ border-color:var(--in); color:var(--in); background:#f5f3ff; }
+  .type-btn[data-t=post].active{ border-color:var(--post); color:var(--post); background:#fff7ed; }
+  .type-btn[data-t=bfs].active{ border-color:var(--bfs); color:var(--bfs); background:#ecfdf5; }
+
+  .pseudo{
+    background:#0f172a; color:#e2e8f0; border-radius:10px; padding:10px 12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.78rem; line-height:1.7;
+  }
+  .pseudo b{ color:#93c5fd; }
+
+  .tabs{ display:flex; gap:6px; margin:14px 0 10px; }
+  .tab-btn{ flex:1; background:#f1f5f9; }
+  .tab-btn.active{ background:var(--accent); color:#fff; }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; min-height:30px; padding:8px; background:#f8fafc; border:1px dashed var(--border); border-radius:8px; }
+  .chip{ background:#e2e8f0; border-radius:6px; padding:3px 8px; font-size:.78rem; font-weight:700; font-family:ui-monospace,monospace; }
+  .chip.hot{ background:var(--accent); color:#fff; }
+
+  .slider-row{ display:flex; align-items:center; gap:8px; }
+  .slider-row input[type=range]{ flex:1; }
+  .slider-row span{ font-size:.75rem; color:var(--muted); width:52px; text-align:right; }
+
+  .progress{ font-size:.85rem; margin:8px 0; }
+  .progress b{ color:var(--accent); }
+
+  .table-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:8px; }
+  table.bfs-trace{ width:100%; border-collapse:collapse; font-size:.78rem; }
+  table.bfs-trace th, table.bfs-trace td{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.bfs-trace th{ color:var(--muted); font-weight:700; text-transform:uppercase; font-size:.68rem; letter-spacing:.03em; background:#f8fafc; }
+  table.bfs-trace td.visit-cell{ font-weight:700; color:var(--bfs); }
+  table.bfs-trace tbody tr:last-child{ background:#ecfdf5; }
+  table.bfs-trace tbody tr:last-child td{ font-weight:700; }
+  table.bfs-trace tbody:empty::after{ content:''; }
+
+  footer{ text-align:center; color:var(--muted); font-size:.75rem; padding:18px 0 26px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌳 Binary Search Tree &amp; Traversal Applet</h1>
+  <p>Build a binary search tree, then watch or practise Depth-First (pre / in / post-order) and Breadth-First traversals.</p>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: build panel -->
+  <div>
+    <div class="panel">
+      <h2>🔨 Build the tree</h2>
+
+      <label for="insertInput">Insert one value</label>
+      <div class="row">
+        <input type="number" id="insertInput" placeholder="e.g. 42">
+        <button class="primary" id="insertBtn" style="flex:0 0 auto;">Insert</button>
+      </div>
+
+      <h3>Bulk build</h3>
+      <label for="bulkInput">Comma-separated values (replaces tree)</label>
+      <input type="text" id="bulkInput" placeholder="50, 35, 72, 12, 41">
+      <button class="full ghost" id="bulkBtn" style="margin-top:8px;">Build from list</button>
+
+      <h3>Or generate</h3>
+      <div class="stack">
+        <div class="row" style="align-items:center;">
+          <label style="flex:0 0 auto;margin:0;">Size</label>
+          <input type="number" id="randomSize" value="12" min="3" max="26" style="max-width:70px;">
+          <button class="ghost" id="randomBtn" style="flex:0 0 auto;">🎲 Random tree</button>
+        </div>
+        <button class="full ghost" id="exampleBtn">📚 Load class example (the 21-node tree from LT11b)</button>
+        <button class="full danger" id="clearBtn">🗑 Clear tree</button>
+      </div>
+
+      <div class="msg" id="buildMsg"></div>
+
+      <details class="ref">
+        <summary>📘 Quick reference: tree vocabulary</summary>
+        <ul>
+          <li><span class="term">Root</span> — the top node, with no parent.</li>
+          <li><span class="term">Parent / child</span> — a node directly above/below another.</li>
+          <li><span class="term">Siblings</span> — children of the same parent.</li>
+          <li><span class="term">Leaf</span> — a node with no children.</li>
+          <li><span class="term">Depth</span> of a node — number of edges from the root to it.</li>
+          <li><span class="term">Height</span> of the tree — depth of its deepest leaf.</li>
+          <li><span class="term">Size</span> — total number of nodes.</li>
+          <li><span class="term">BST rule</span> — every left descendant &lt; node &lt; every right descendant.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+
+  <!-- CENTER: canvas -->
+  <div>
+    <div class="canvas-wrap">
+      <div class="canvas-scroll" id="canvasScroll">
+        <svg id="treeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="empty-state" id="emptyState">
+          <div class="big">🌱</div>
+          Your tree is empty.<br>Insert a value, or click <b>🎲 Random tree</b> / <b>📚 Load class example</b> to get started.
+        </div>
+      </div>
+      <div class="caption" id="caption"></div>
+    </div>
+    <div class="status-bar" id="statusBar">Build a tree, pick a traversal type on the right, then press <b>Play</b> or switch to <b>Practice</b>.</div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h2>🔎 Visited nodes <span style="font-weight:400;color:var(--muted);">(click order)</span></h2>
+      <p style="font-size:.8rem;color:var(--muted);margin:0 0 8px;">
+        Single-click any node to mark it visited while you think through a traversal. This is just your scratchpad — it doesn't affect Practice scoring.
+      </p>
+      <div class="chips" id="peekChips"></div>
+      <button class="ghost full" id="peekClearBtn" style="margin-top:8px;">↺ Clear visited marks</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: traversal panel -->
+  <div>
+    <div class="panel">
+      <h2>🧭 Traversal type</h2>
+      <div class="type-grid">
+        <button class="type-btn active" data-t="pre">Pre-order</button>
+        <button class="type-btn" data-t="in">In-order</button>
+        <button class="type-btn" data-t="post">Post-order</button>
+        <button class="type-btn" data-t="bfs">BFS (level-order)</button>
+      </div>
+      <div class="pseudo" id="pseudoBox"></div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="watch">▶ Watch</button>
+        <button class="tab-btn" data-tab="practice">🎯 Practice</button>
+      </div>
+
+      <!-- WATCH TAB -->
+      <div class="tab-panel active" id="tab-watch">
+        <div class="row">
+          <button class="primary" id="playBtn">▶ Play</button>
+          <button class="ghost" id="stepBtn">⏭ Step</button>
+          <button class="ghost" id="resetBtn">↺ Reset</button>
+        </div>
+        <h3>Speed</h3>
+        <div class="slider-row">
+          <input type="range" id="speedSlider" min="150" max="1600" value="650" step="50">
+          <span id="speedLabel">650ms</span>
+        </div>
+        <h3>Visit order so far</h3>
+        <div class="chips" id="orderChips"></div>
+        <h3 id="secondaryTitle">Call stack (open nodes)</h3>
+        <div class="chips" id="secondaryChips"></div>
+        <div id="bfsTraceWrap" style="display:none;">
+          <h3>BFS trace (step-by-step)</h3>
+          <div class="table-wrap">
+            <table class="bfs-trace">
+              <thead><tr><th>Step</th><th>Visit (dequeue)</th><th>Queue after adding children</th></tr></thead>
+              <tbody id="bfsTraceBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRACTICE TAB -->
+      <div class="tab-panel" id="tab-practice">
+        <p style="font-size:.85rem;color:var(--muted);margin:0 0 8px;">
+          Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct <span id="practiceTypeLabel">pre-order</span> traversal — just like the class "unplugged" activity.
+        </p>
+        <button class="primary full" id="practiceStartBtn">🎯 Start practice</button>
+        <div class="progress" id="practiceProgress" style="display:none;">
+          Progress: <b id="practiceCount">0 / 0</b> &nbsp;·&nbsp; Mistakes: <b id="practiceMistakes">0</b>
+        </div>
+        <div class="chips" id="practiceChips"></div>
+        <div id="bfsTracePracticeWrap" style="display:none;">
+          <h3>BFS trace (step-by-step)</h3>
+          <div class="table-wrap">
+            <table class="bfs-trace">
+              <thead><tr><th>Step</th><th>Visit (dequeue)</th><th>Queue after adding children</th></tr></thead>
+              <tbody id="bfsTracePracticeBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>Single-file HTML applet — works fully offline. Built for classroom use alongside LT11b (Binary Tree / BST).</footer>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---------------- Data model ----------------
+  let nodeIdCounter = 0;
+  let root = null;
+
+  function makeNode(value){
+    return { id: 'n' + (nodeIdCounter++), value, left: null, right: null, x: 0, y: 0 };
+  }
+
+  function insertInto(node, value){
+    if(!node) return { node: makeNode(value), inserted: true };
+    if(value === node.value) return { node, inserted: false };
+    if(value < node.value){
+      const r = insertInto(node.left, value);
+      node.left = r.node;
+      return { node, inserted: r.inserted };
+    } else {
+      const r = insertInto(node.right, value);
+      node.right = r.node;
+      return { node, inserted: r.inserted };
+    }
+  }
+
+  function insertValue(value){
+    const r = insertInto(root, value);
+    root = r.node;
+    return r.inserted;
+  }
+
+  const CLASS_EXAMPLE = [50,35,72,12,41,53,86,5,27,37,51,64,99,92,57,39,33,16,70,63,46,30];
+
+  // ---------------- Layout ----------------
+  function layoutTree(){
+    let counter = 0;
+    let maxDepth = 0;
+    (function assign(node, depth){
+      if(!node) return;
+      assign(node.left, depth + 1);
+      node.x = counter++;
+      node.y = depth;
+      if(depth > maxDepth) maxDepth = depth;
+      assign(node.right, depth + 1);
+    })(root, 0);
+    return { count: counter, maxDepth };
+  }
+
+  function treeSize(node){
+    if(!node) return 0;
+    return 1 + treeSize(node.left) + treeSize(node.right);
+  }
+
+  // ---------------- Rendering ----------------
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('treeSvg');
+  const emptyState = document.getElementById('emptyState');
+  const caption = document.getElementById('caption');
+  const R = 22, X_SPACING = 62, Y_SPACING = 88, MARGIN_X = 44, MARGIN_Y = 40;
+
+  function renderTree(){
+    svg.innerHTML = '';
+    if(!root){
+      svg.style.display = 'none';
+      emptyState.style.display = 'block';
+      caption.textContent = '';
+      return;
+    }
+    svg.style.display = 'block';
+    emptyState.style.display = 'none';
+
+    const { count, maxDepth } = layoutTree();
+    const width = MARGIN_X * 2 + Math.max(count - 1, 0) * X_SPACING;
+    const height = MARGIN_Y * 2 + maxDepth * Y_SPACING + R;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+
+    const px = n => MARGIN_X + n.x * X_SPACING;
+    const py = n => MARGIN_Y + n.y * Y_SPACING;
+
+    (function drawEdges(node){
+      if(!node) return;
+      [node.left, node.right].forEach(child => {
+        if(!child) return;
+        const line = document.createElementNS(NS, 'line');
+        line.setAttribute('x1', px(node)); line.setAttribute('y1', py(node));
+        line.setAttribute('x2', px(child)); line.setAttribute('y2', py(child));
+        line.setAttribute('class', 'edge');
+        svg.appendChild(line);
+        drawEdges(child);
+      });
+    })(root);
+
+    (function drawNodes(node){
+      if(!node) return;
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'node');
+      g.setAttribute('data-id', node.id);
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', px(node)); circle.setAttribute('cy', py(node)); circle.setAttribute('r', R);
+      const text = document.createElementNS(NS, 'text');
+      text.setAttribute('x', px(node)); text.setAttribute('y', py(node) + 4);
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = node.value;
+      // Small numbered badge that appears once a node has been visited, showing
+      // its position in the traversal order — a clearer "visited" signal than
+      // the fill colour alone, and it doubles as the traversal-order label.
+      const badge = document.createElementNS(NS, 'g');
+      badge.setAttribute('class', 'visit-badge');
+      const badgeCircle = document.createElementNS(NS, 'circle');
+      badgeCircle.setAttribute('cx', px(node) + R * 0.72);
+      badgeCircle.setAttribute('cy', py(node) - R * 0.72);
+      badgeCircle.setAttribute('r', 9);
+      const badgeText = document.createElementNS(NS, 'text');
+      badgeText.setAttribute('x', px(node) + R * 0.72);
+      badgeText.setAttribute('y', py(node) - R * 0.72 + 3.5);
+      badgeText.setAttribute('text-anchor', 'middle');
+      badge.appendChild(badgeCircle); badge.appendChild(badgeText);
+      g.appendChild(circle); g.appendChild(text); g.appendChild(badge);
+      g.addEventListener('click', () => onNodePeek(node.id));
+      g.addEventListener('dblclick', (e) => { e.preventDefault(); onNodeSelect(node.id); });
+      svg.appendChild(g);
+      drawNodes(node.left);
+      drawNodes(node.right);
+    })(root);
+
+    caption.innerHTML = `Nodes: <b>${count}</b> &nbsp;·&nbsp; Height: <b>${maxDepth}</b>`;
+  }
+
+  function nodeEl(id){ return svg.querySelector(`[data-id="${id}"]`); }
+  function clearHighlights(){
+    svg.querySelectorAll('.node').forEach(el => el.classList.remove('current','visited','queued','wrong-flash','peeked'));
+    clearPeekedState();
+  }
+  // Marks a node visited and stamps its traversal-order number on the badge.
+  // Demotes any lingering "peeked" (scratchpad) mark — the real visit wins.
+  function markVisited(el, orderNum){
+    el.classList.remove('peeked');
+    el.classList.add('visited');
+    const badgeText = el.querySelector('.visit-badge text');
+    if(badgeText) badgeText.textContent = orderNum;
+  }
+
+  // ---------------- Traversal generators ----------------
+  function* preGen(node){
+    if(!node) return;
+    yield { type:'enter', id:node.id, value:node.value };
+    yield { type:'visit', id:node.id, value:node.value };
+    yield* preGen(node.left);
+    yield* preGen(node.right);
+    yield { type:'exit', id:node.id, value:node.value };
+  }
+  function* inGen(node){
+    if(!node) return;
+    yield { type:'enter', id:node.id, value:node.value };
+    yield* inGen(node.left);
+    yield { type:'visit', id:node.id, value:node.value };
+    yield* inGen(node.right);
+    yield { type:'exit', id:node.id, value:node.value };
+  }
+  function* postGen(node){
+    if(!node) return;
+    yield { type:'enter', id:node.id, value:node.value };
+    yield* postGen(node.left);
+    yield* postGen(node.right);
+    yield { type:'visit', id:node.id, value:node.value };
+    yield { type:'exit', id:node.id, value:node.value };
+  }
+  function* bfsGen(start){
+    if(!start) return;
+    let queue = [start];
+    yield { type:'enqueue', id:start.id, value:start.value };
+    while(queue.length){
+      const node = queue.shift();
+      yield { type:'dequeue', id:node.id, value:node.value };
+      yield { type:'visit', id:node.id, value:node.value };
+      if(node.left){ queue.push(node.left); yield { type:'enqueue', id:node.left.id, value:node.left.value }; }
+      if(node.right){ queue.push(node.right); yield { type:'enqueue', id:node.right.id, value:node.right.value }; }
+    }
+  }
+
+  // Pre-computes the full BFS step table — Step / Visit / Queue after adding
+  // children — the same shape as the reference "How BFS works" table, so it
+  // can be revealed one row at a time as nodes are visited/selected.
+  function computeBfsTrace(){
+    const rows = [];
+    let queue = [];
+    let pending = null;
+    for(const ev of bfsGen(root)){
+      if(ev.type === 'dequeue'){
+        if(pending){ pending.queueAfter = queue.slice(); rows.push(pending); pending = null; }
+        queue.shift();
+      } else if(ev.type === 'visit'){
+        pending = { step: rows.length + 1, visit: ev.value };
+      } else if(ev.type === 'enqueue'){
+        queue.push(ev.value);
+      }
+    }
+    if(pending){ pending.queueAfter = queue.slice(); rows.push(pending); }
+    return rows;
+  }
+
+  function renderBfsTraceRows(tbodyId, rows){
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = rows.map(r =>
+      `<tr><td>${r.step}</td><td class="visit-cell">${r.visit}</td><td>${r.queueAfter.length ? r.queueAfter.join(', ') : 'empty'}</td></tr>`
+    ).join('');
+  }
+
+  function genFor(type, start){
+    if(type === 'pre') return preGen(start);
+    if(type === 'in') return inGen(start);
+    if(type === 'post') return postGen(start);
+    return bfsGen(start);
+  }
+
+  function visitOrderIds(type){
+    return Array.from(genFor(type, root)).filter(e => e.type === 'visit').map(e => e.id);
+  }
+
+  const PSEUDO = {
+    pre:  '<b>Pre-order</b>(node):\n  1. Visit node\n  2. Traverse left subtree\n  3. Traverse right subtree',
+    in:   '<b>In-order</b>(node):\n  1. Traverse left subtree\n  2. Visit node\n  3. Traverse right subtree',
+    post: '<b>Post-order</b>(node):\n  1. Traverse left subtree\n  2. Traverse right subtree\n  3. Visit node',
+    bfs:  '<b>BFS / level-order</b>(root):\n  1. Put root in a queue\n  2. Dequeue front, visit it\n  3. Enqueue its children (left, then right)\n  4. Repeat until queue is empty'
+  };
+  const TYPE_LABEL = { pre:'pre-order', in:'in-order', post:'post-order', bfs:'BFS (level-order)' };
+
+  // ---------------- App state ----------------
+  let activeType = 'pre';
+  let events = [], stepIndex = 0, playing = false, timer = null;
+  let stackDisp = [], queueDisp = [], orderSoFar = [], bfsTrace = [];
+  let practiceOn = false, practiceExpected = [], practiceIndex = 0, practiceMistakes = 0, practiceBfsTrace = [];
+
+  const statusBar = document.getElementById('statusBar');
+  const orderChips = document.getElementById('orderChips');
+  const secondaryTitle = document.getElementById('secondaryTitle');
+  const secondaryChips = document.getElementById('secondaryChips');
+  const playBtn = document.getElementById('playBtn');
+  const stepBtn = document.getElementById('stepBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const speedSlider = document.getElementById('speedSlider');
+  const speedLabel = document.getElementById('speedLabel');
+  const pseudoBox = document.getElementById('pseudoBox');
+  const peekChips = document.getElementById('peekChips');
+  const peekClearBtn = document.getElementById('peekClearBtn');
+  let peekedOrder = [], peekedIds = new Set();
+
+  function setStatus(text, cls){
+    statusBar.textContent = text;
+    statusBar.style.color = cls === 'ok' ? 'var(--ok)' : (cls === 'err' ? 'var(--danger)' : 'var(--text)');
+  }
+
+  function renderChips(container, values, hotLast){
+    container.innerHTML = '';
+    values.forEach((v, i) => {
+      const c = document.createElement('span');
+      c.className = 'chip' + (hotLast && i === values.length - 1 ? ' hot' : '');
+      c.textContent = v;
+      container.appendChild(c);
+    });
+  }
+
+  // Persistent "visited by single-click" scratchpad — separate from the
+  // graded Practice selections and from the Watch-mode traversal itself.
+  function clearPeekedState(){
+    peekedOrder = []; peekedIds = new Set();
+    if(peekChips) renderChips(peekChips, peekedOrder, true);
+  }
+  peekClearBtn.addEventListener('click', () => {
+    svg.querySelectorAll('.node.peeked').forEach(el => el.classList.remove('peeked'));
+    clearPeekedState();
+  });
+
+  function updateSidePanels(){
+    renderChips(orderChips, orderSoFar, true);
+    if(activeType === 'bfs'){
+      secondaryTitle.textContent = 'Queue (waiting to be visited)';
+      renderChips(secondaryChips, queueDisp);
+    } else {
+      secondaryTitle.textContent = 'Call stack (open nodes, root → current)';
+      renderChips(secondaryChips, stackDisp);
+    }
+  }
+
+  function resetWatch(){
+    pausePlayback();
+    clearHighlights();
+    events = Array.from(genFor(activeType, root));
+    stepIndex = 0;
+    orderSoFar = []; stackDisp = []; queueDisp = [];
+    const bfsWrap = document.getElementById('bfsTraceWrap');
+    if(activeType === 'bfs' && root){
+      bfsTrace = computeBfsTrace();
+      bfsWrap.style.display = 'block';
+    } else {
+      bfsTrace = [];
+      bfsWrap.style.display = 'none';
+    }
+    document.getElementById('bfsTraceBody').innerHTML = '';
+    updateSidePanels();
+    const hasTree = !!root;
+    playBtn.disabled = !hasTree;
+    stepBtn.disabled = !hasTree;
+    playBtn.textContent = '▶ Play';
+    setStatus(hasTree ? 'Ready. Press Play or Step to begin the ' + TYPE_LABEL[activeType] + ' traversal.' : 'Build a tree first.');
+  }
+
+  function applyEvent(ev){
+    const el = nodeEl(ev.id);
+    if(!el) return;
+    if(ev.type === 'enter'){
+      stackDisp.push(ev.value);
+      el.classList.add('current');
+      setStatus(`Exploring node ${ev.value}…`);
+    } else if(ev.type === 'exit'){
+      stackDisp.pop();
+      el.classList.remove('current');
+      setStatus(`Done with node ${ev.value} — returning up the tree.`);
+    } else if(ev.type === 'visit'){
+      orderSoFar.push(ev.value);
+      markVisited(el, orderSoFar.length);
+      if(activeType === 'bfs') renderBfsTraceRows('bfsTraceBody', bfsTrace.slice(0, orderSoFar.length));
+      setStatus(`✅ Visit ${ev.value} → added to traversal output.`);
+    } else if(ev.type === 'enqueue'){
+      queueDisp.push(ev.value);
+      el.classList.add('queued');
+      setStatus(`➕ Enqueue ${ev.value} (added to back of queue).`);
+    } else if(ev.type === 'dequeue'){
+      queueDisp.shift();
+      el.classList.remove('queued');
+      el.classList.add('current');
+      setStatus(`➖ Dequeue ${ev.value} from front of queue.`);
+    }
+    updateSidePanels();
+  }
+
+  function stepForward(){
+    if(stepIndex >= events.length) return;
+    applyEvent(events[stepIndex]);
+    stepIndex++;
+    if(stepIndex >= events.length){
+      pausePlayback();
+      playBtn.disabled = true;
+      stepBtn.disabled = true;
+      setStatus(`🎉 Traversal complete! Order: ${orderSoFar.join(', ')}`, 'ok');
+      svg.querySelectorAll('.node.current').forEach(el => el.classList.remove('current'));
+    }
+  }
+
+  function tick(){
+    if(!playing) return;
+    stepForward();
+    if(stepIndex < events.length){
+      timer = setTimeout(tick, Number(speedSlider.value));
+    }
+  }
+
+  function startPlayback(){
+    if(!root) return;
+    playing = true;
+    playBtn.textContent = '⏸ Pause';
+    tick();
+  }
+  function pausePlayback(){
+    playing = false;
+    clearTimeout(timer);
+    playBtn.textContent = '▶ Play';
+  }
+
+  playBtn.addEventListener('click', () => {
+    if(!root) return;
+    if(playing) pausePlayback();
+    else startPlayback();
+  });
+  stepBtn.addEventListener('click', () => { pausePlayback(); stepForward(); });
+  resetBtn.addEventListener('click', resetWatch);
+  speedSlider.addEventListener('input', () => speedLabel.textContent = speedSlider.value + 'ms');
+
+  // ---------------- Practice mode ----------------
+  const practiceStartBtn = document.getElementById('practiceStartBtn');
+  const practiceProgress = document.getElementById('practiceProgress');
+  const practiceCount = document.getElementById('practiceCount');
+  const practiceMistakesEl = document.getElementById('practiceMistakes');
+  const practiceChips = document.getElementById('practiceChips');
+  const practiceTypeLabel = document.getElementById('practiceTypeLabel');
+
+  function startPractice(){
+    if(!root) return;
+    pausePlayback();
+    clearHighlights();
+    practiceOn = true;
+    svg.classList.add('practice-on');
+    practiceExpected = visitOrderIds(activeType);
+    practiceIndex = 0;
+    practiceMistakes = 0;
+    practiceProgress.style.display = 'block';
+    practiceCount.textContent = `0 / ${practiceExpected.length}`;
+    practiceMistakesEl.textContent = '0';
+    practiceChips.innerHTML = '';
+    practiceStartBtn.textContent = '↺ Restart practice';
+    const bfsPracticeWrap = document.getElementById('bfsTracePracticeWrap');
+    if(activeType === 'bfs'){
+      practiceBfsTrace = computeBfsTrace();
+      bfsPracticeWrap.style.display = 'block';
+    } else {
+      practiceBfsTrace = [];
+      bfsPracticeWrap.style.display = 'none';
+    }
+    document.getElementById('bfsTracePracticeBody').innerHTML = '';
+    setStatus(`Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
+  }
+
+  function endPracticeSuccess(){
+    practiceOn = false;
+    svg.classList.remove('practice-on');
+    setStatus(`🎉 Correct! You traversed the tree in ${TYPE_LABEL[activeType]} order with ${practiceMistakes} mistake(s).`, 'ok');
+  }
+
+  function onNodePeek(id){
+    // Single click = "visit" a node. It never affects Practice scoring or the
+    // Watch animation, but — unlike a plain preview — the mark and the node's
+    // spot in the side "visited nodes" list persist until cleared, so you can
+    // trace a traversal by eye before committing to an answer.
+    const el = nodeEl(id);
+    if(!el) return;
+    el.classList.add('peek');
+    clearTimeout(el._peekTimer);
+    el._peekTimer = setTimeout(() => el.classList.remove('peek'), 450);
+
+    if(el.classList.contains('visited')) return; // already formally visited — leave it be
+    if(!peekedIds.has(id)){
+      peekedIds.add(id);
+      const node = findNodeById(root, id);
+      peekedOrder.push(node.value);
+      el.classList.add('peeked');
+      const badgeText = el.querySelector('.visit-badge text');
+      if(badgeText) badgeText.textContent = peekedOrder.length;
+      renderChips(peekChips, peekedOrder, true);
+    }
+  }
+
+  function onNodeSelect(id){
+    if(!practiceOn) return;
+    const el = nodeEl(id);
+    if(el.classList.contains('visited')) return;
+    const expected = practiceExpected[practiceIndex];
+    if(id === expected){
+      practiceIndex++;
+      markVisited(el, practiceIndex);
+      const node = findNodeById(root, id);
+      const chip = document.createElement('span');
+      chip.className = 'chip hot';
+      chip.textContent = node.value;
+      practiceChips.appendChild(chip);
+      practiceCount.textContent = `${practiceIndex} / ${practiceExpected.length}`;
+      if(activeType === 'bfs') renderBfsTraceRows('bfsTracePracticeBody', practiceBfsTrace.slice(0, practiceIndex));
+      if(practiceIndex >= practiceExpected.length) endPracticeSuccess();
+    } else {
+      el.classList.add('wrong-flash');
+      practiceMistakes++;
+      practiceMistakesEl.textContent = String(practiceMistakes);
+      setTimeout(() => el.classList.remove('wrong-flash'), 400);
+    }
+  }
+
+  function findNodeById(node, id){
+    if(!node) return null;
+    if(node.id === id) return node;
+    return findNodeById(node.left, id) || findNodeById(node.right, id);
+  }
+
+  practiceStartBtn.addEventListener('click', startPractice);
+
+  function resetPracticeUI(){
+    practiceOn = false;
+    svg.classList.remove('practice-on');
+    practiceProgress.style.display = 'none';
+    practiceChips.innerHTML = '';
+    practiceStartBtn.textContent = '🎯 Start practice';
+    practiceBfsTrace = [];
+    document.getElementById('bfsTracePracticeWrap').style.display = 'none';
+    document.getElementById('bfsTracePracticeBody').innerHTML = '';
+  }
+
+  // ---------------- Tabs & traversal-type selector ----------------
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeType = btn.dataset.t;
+      pseudoBox.innerHTML = PSEUDO[activeType].replace(/\n/g, '<br>');
+      practiceTypeLabel.textContent = TYPE_LABEL[activeType];
+      resetPracticeUI();
+      clearHighlights();
+      resetWatch();
+    });
+  });
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'watch'){
+        practiceOn = false;
+        svg.classList.remove('practice-on');
+      } else {
+        pausePlayback();
+      }
+    });
+  });
+
+  // ---------------- Build controls ----------------
+  const buildMsg = document.getElementById('buildMsg');
+  function flashMsg(text, cls){
+    buildMsg.textContent = text;
+    buildMsg.className = 'msg' + (cls ? ' ' + cls : '');
+  }
+
+  function rebuild(){
+    renderTree();
+    resetWatch();
+    resetPracticeUI();
+  }
+
+  document.getElementById('insertBtn').addEventListener('click', () => {
+    const input = document.getElementById('insertInput');
+    const v = Number(input.value);
+    if(input.value.trim() === '' || Number.isNaN(v)){ flashMsg('Enter a number to insert.', 'err'); return; }
+    const ok = insertValue(v);
+    flashMsg(ok ? `Inserted ${v}.` : `${v} is already in the tree — duplicates are ignored.`, ok ? 'ok' : 'err');
+    input.value = '';
+    input.focus();
+    rebuild();
+  });
+  document.getElementById('insertInput').addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('insertBtn').click();
+  });
+
+  document.getElementById('bulkBtn').addEventListener('click', () => {
+    const raw = document.getElementById('bulkInput').value;
+    const parts = raw.split(',').map(s => s.trim()).filter(s => s !== '');
+    const values = parts.map(Number);
+    if(!values.length || values.some(Number.isNaN)){ flashMsg('Enter a comma-separated list of numbers.', 'err'); return; }
+    root = null;
+    let dupes = 0;
+    values.forEach(v => { if(!insertValue(v)) dupes++; });
+    flashMsg(`Built tree with ${treeSize(root)} node(s)` + (dupes ? ` (${dupes} duplicate(s) skipped).` : '.'), 'ok');
+    rebuild();
+  });
+
+  document.getElementById('randomBtn').addEventListener('click', () => {
+    let n = Number(document.getElementById('randomSize').value) || 12;
+    n = Math.max(3, Math.min(26, n));
+    const pool = [];
+    for(let i = 1; i <= 99; i++) pool.push(i);
+    for(let i = pool.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    root = null;
+    pool.slice(0, n).forEach(v => insertValue(v));
+    flashMsg(`Generated a random tree with ${n} nodes.`, 'ok');
+    rebuild();
+  });
+
+  document.getElementById('exampleBtn').addEventListener('click', () => {
+    root = null;
+    CLASS_EXAMPLE.forEach(v => insertValue(v));
+    flashMsg('Loaded the 21-node example tree from the LT11b slides.', 'ok');
+    rebuild();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    root = null;
+    flashMsg('Tree cleared.');
+    rebuild();
+  });
+
+  // ---------------- Init ----------------
+  pseudoBox.innerHTML = PSEUDO.pre.replace(/\n/g, '<br>');
+  CLASS_EXAMPLE.forEach(v => insertValue(v));
+  rebuild();
+})();
+</script>
+</body>
+</html>
