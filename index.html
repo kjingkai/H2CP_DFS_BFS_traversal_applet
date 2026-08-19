@@ -108,6 +108,10 @@
       radial-gradient(circle at 1px 1px, #e5e9f2 1px, transparent 0) 0 0/18px 18px;
     flex:1; min-height:380px; display:flex; align-items:flex-start; justify-content:center;
   }
+  /* Without this, flexbox shrinks the SVG back down to fit the visible
+     width whenever it's wider than the container, silently undoing the
+     zoom slider (and clipping the natural, unzoomed tree the same way). */
+  #treeSvg{ flex-shrink:0; }
   .empty-state{ margin:auto; text-align:center; color:var(--muted); padding:40px; font-size:.95rem; }
   .empty-state .big{ font-size:2.4rem; margin-bottom:8px; }
 
