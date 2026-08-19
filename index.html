@@ -254,6 +254,11 @@
         </div>
       </div>
       <div class="caption" id="caption"></div>
+      <div class="slider-row" style="padding:0 10px 8px;">
+        <span style="flex:0 0 auto;width:auto;text-align:left;font-size:.78rem;color:var(--muted);">🔍 Zoom</span>
+        <input type="range" id="zoomSlider" min="50" max="200" value="100" step="10">
+        <span id="zoomLabel">100%</span>
+      </div>
     </div>
     <div class="status-bar" id="statusBar">Build a tree, pick a traversal type on the right, then press <b>Play</b> or switch to <b>Practice</b>.</div>
 
@@ -425,7 +430,24 @@
   const svg = document.getElementById('treeSvg');
   const emptyState = document.getElementById('emptyState');
   const caption = document.getElementById('caption');
+  const zoomSlider = document.getElementById('zoomSlider');
+  const zoomLabel = document.getElementById('zoomLabel');
   const R = 22, X_SPACING = 62, Y_SPACING = 88, MARGIN_X = 44, MARGIN_Y = 40;
+
+  // Zoom rescales the already-drawn SVG (width/height attrs, viewBox fixed)
+  // instead of re-rendering, so it never disturbs in-progress highlights,
+  // hidden values, or badges — it's purely a visual resize.
+  let baseSvgWidth = 0, baseSvgHeight = 0;
+  function applyZoom(){
+    if(!baseSvgWidth || !baseSvgHeight) return;
+    const scale = Number(zoomSlider.value) / 100;
+    svg.setAttribute('width', baseSvgWidth * scale);
+    svg.setAttribute('height', baseSvgHeight * scale);
+  }
+  zoomSlider.addEventListener('input', () => {
+    zoomLabel.textContent = zoomSlider.value + '%';
+    applyZoom();
+  });
 
   function renderTree(){
     svg.innerHTML = '';
@@ -433,6 +455,7 @@
       svg.style.display = 'none';
       emptyState.style.display = 'block';
       caption.textContent = '';
+      baseSvgWidth = 0; baseSvgHeight = 0;
       return;
     }
     svg.style.display = 'block';
@@ -442,8 +465,9 @@
     const width = MARGIN_X * 2 + Math.max(count - 1, 0) * X_SPACING;
     const height = MARGIN_Y * 2 + maxDepth * Y_SPACING + R;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.setAttribute('width', width);
-    svg.setAttribute('height', height);
+    baseSvgWidth = width;
+    baseSvgHeight = height;
+    applyZoom();
 
     const px = n => MARGIN_X + n.x * X_SPACING;
     const py = n => MARGIN_Y + n.y * Y_SPACING;
