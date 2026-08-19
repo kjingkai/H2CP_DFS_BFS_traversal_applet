@@ -321,11 +321,17 @@
 
       <!-- PRACTICE TAB -->
       <div class="tab-panel" id="tab-practice">
+        <div id="searchPracticeSetRow" style="display:none;margin-bottom:10px;">
+          <button class="ghost full" id="searchNewSetBtn">🎲 New practice set (20+ nodes, 5 levels, 3 targets)</button>
+          <p id="searchSetHint" style="font-size:.78rem;color:var(--muted);margin:6px 0 0;"></p>
+          <div class="chips" id="searchSetChips" style="margin-top:6px;"></div>
+        </div>
         <p id="practiceInstructions" style="font-size:.85rem;color:var(--muted);margin:0 0 8px;">
           Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct pre-order traversal — just like the class "unplugged" activity.
         </p>
         <button class="primary full" id="practiceStartBtn">🎯 Start practice</button>
         <button class="ghost full" id="searchRevealBtn" style="display:none;margin-top:8px;">👁 Reveal all values</button>
+        <button class="ghost full" id="declareNotFoundBtn" style="display:none;margin-top:8px;">🚫 Declare "not in this tree"</button>
         <div class="progress" id="practiceProgress" style="display:none;">
           Progress: <b id="practiceCount">0 / 0</b> &nbsp;·&nbsp; Mistakes: <b id="practiceMistakes">0</b>
         </div>
@@ -377,6 +383,19 @@
     const r = insertInto(root, value);
     root = r.node;
     return r.inserted;
+  }
+
+  function shuffle(arr){
+    for(let i = arr.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function maxDepthOf(node){
+    if(!node) return -1;
+    return 1 + Math.max(maxDepthOf(node.left), maxDepthOf(node.right));
   }
 
   const CLASS_EXAMPLE = [50,35,72,12,41,53,86,5,27,37,51,64,99,92,57,39,33,16,70,63,46,30];
@@ -644,6 +663,11 @@
   const orderChipsLabel = document.getElementById('orderChipsLabel');
   const searchRevealBtn = document.getElementById('searchRevealBtn');
   const practiceInstructions = document.getElementById('practiceInstructions');
+  const declareNotFoundBtn = document.getElementById('declareNotFoundBtn');
+  const searchPracticeSetRow = document.getElementById('searchPracticeSetRow');
+  const searchNewSetBtn = document.getElementById('searchNewSetBtn');
+  const searchSetHint = document.getElementById('searchSetHint');
+  const searchSetChips = document.getElementById('searchSetChips');
 
   function setStatus(text, cls){
     statusBar.textContent = text;
@@ -819,7 +843,7 @@
   const practiceMistakesEl = document.getElementById('practiceMistakes');
   const practiceChips = document.getElementById('practiceChips');
 
-  let practiceSearchTarget = null;
+  let practiceSearchTarget = null, practiceSearchFound = true;
 
   function startPractice(){
     if(!root) return;
@@ -835,11 +859,8 @@
       }
       const evs = Array.from(searchGen(root, target));
       const last = evs[evs.length - 1];
-      if(!last || last.type !== 'found'){
-        setStatus(`${target} is not in this tree — Practice needs a target that exists, so it can be revealed by clicking real nodes. Try Watch mode to see a "not found" search.`, 'err');
-        return;
-      }
       practiceSearchTarget = target;
+      practiceSearchFound = !!last && last.type === 'found';
       practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
       hideAllValues();
     } else {
@@ -865,7 +886,7 @@
     }
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
     setStatus(activeType === 'search'
-      ? `Practice: double-click nodes, in order, to reveal the correct binary-search path to ${practiceSearchTarget}. (Single-click also reveals — it's your free look, like the class activity — but only double-clicks count.)`
+      ? `Practice: double-click nodes, in order, along the correct binary-search path for ${practiceSearchTarget}. If the real path runs out, use "Declare not in this tree" below.`
       : `Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
   }
 
@@ -920,7 +941,15 @@
       practiceChips.appendChild(chip);
       practiceCount.textContent = `${practiceIndex} / ${practiceExpected.length}`;
       if(activeType === 'bfs') renderBfsTraceRows('bfsTracePracticeBody', practiceBfsTrace.slice(0, practiceIndex));
-      if(practiceIndex >= practiceExpected.length) endPracticeSuccess();
+      if(practiceIndex >= practiceExpected.length){
+        if(activeType === 'search' && !practiceSearchFound){
+          // No node represents "not found" — the last real node on the path
+          // was just correctly selected, so prompt for the explicit declaration.
+          setStatus(`You've checked every real node on the path to ${practiceSearchTarget} — now use "Declare not in this tree" below.`);
+        } else {
+          endPracticeSuccess();
+        }
+      }
     } else {
       el.classList.add('wrong-flash');
       practiceMistakes++;
@@ -928,6 +957,26 @@
       setTimeout(() => el.classList.remove('wrong-flash'), 400);
     }
   }
+
+  function onDeclareNotFound(){
+    if(!practiceOn || activeType !== 'search') return;
+    if(practiceIndex < practiceExpected.length){
+      practiceMistakes++;
+      practiceMistakesEl.textContent = String(practiceMistakes);
+      setStatus(`Not yet — you still have real nodes left to check (${practiceIndex}/${practiceExpected.length} so far).`, 'err');
+      return;
+    }
+    if(practiceSearchFound){
+      practiceMistakes++;
+      practiceMistakesEl.textContent = String(practiceMistakes);
+      setStatus(`Not quite — ${practiceSearchTarget} IS in this tree. Double-check your last comparison.`, 'err');
+      return;
+    }
+    practiceOn = false;
+    svg.classList.remove('practice-on');
+    setStatus(`🎯 Correct! ${practiceSearchTarget} is not in this tree — you traced the path and correctly declared it missing, with ${practiceMistakes} mistake(s).`, 'ok');
+  }
+  declareNotFoundBtn.addEventListener('click', onDeclareNotFound);
 
   function findNodeById(node, id){
     if(!node) return null;
@@ -962,9 +1011,11 @@
       searchTargetRow.style.display = isSearch ? 'block' : 'none';
       secondaryWrap.style.display = isSearch ? 'none' : '';
       searchRevealBtn.style.display = isSearch ? 'block' : 'none';
+      declareNotFoundBtn.style.display = isSearch ? 'block' : 'none';
+      searchPracticeSetRow.style.display = isSearch ? 'block' : 'none';
       orderChipsLabel.textContent = isSearch ? 'Search path so far' : 'Visit order so far';
       practiceInstructions.innerHTML = isSearch
-        ? 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target.'
+        ? 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target. If the real path runs out before you find it, use <b>Declare "not in this tree"</b>.'
         : `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
       resetPracticeUI();
       clearHighlights();
@@ -1031,10 +1082,7 @@
     n = Math.max(3, Math.min(26, n));
     const pool = [];
     for(let i = 1; i <= 99; i++) pool.push(i);
-    for(let i = pool.length - 1; i > 0; i--){
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
+    shuffle(pool);
     root = null;
     pool.slice(0, n).forEach(v => insertValue(v));
     flashMsg(`Generated a random tree with ${n} nodes.`, 'ok');
@@ -1052,6 +1100,70 @@
     root = null;
     flashMsg('Tree cleared.');
     rebuild();
+  });
+
+  // ---------------- Search practice-set generator ----------------
+  // Rejection-samples a random tree until it has >=20 nodes and >=5 levels
+  // (height >= 4) — a random BST of this size almost always clears that bar
+  // on the first try, since expected height is roughly 2*ln(n).
+  function generateSearchPracticeTree(){
+    for(let attempt = 0; attempt < 60; attempt++){
+      const n = 20 + Math.floor(Math.random() * 6); // 20-25 nodes
+      const pool = [];
+      for(let i = 1; i <= 99; i++) pool.push(i);
+      shuffle(pool);
+      const values = pool.slice(0, n);
+      let candidateRoot = null;
+      values.forEach(v => { candidateRoot = insertInto(candidateRoot, v).node; });
+      if(maxDepthOf(candidateRoot) >= 4) return { root: candidateRoot, values };
+    }
+    return null;
+  }
+
+  // Picks 3 target numbers: 1-2 sampled from real tree values (findable),
+  // the rest sampled from values NOT in the tree (unfindable), then shuffled
+  // together so the found/not-found split isn't given away by order.
+  function pickSearchTargets(values){
+    const valueSet = new Set(values);
+    const foundCount = Math.random() < 0.5 ? 1 : 2;
+    const notFoundCount = 3 - foundCount;
+
+    const foundTargets = shuffle(values.slice()).slice(0, foundCount);
+
+    const notFoundTargets = [];
+    while(notFoundTargets.length < notFoundCount){
+      const candidate = 1 + Math.floor(Math.random() * 99);
+      if(!valueSet.has(candidate) && !notFoundTargets.includes(candidate)) notFoundTargets.push(candidate);
+    }
+
+    return { targets: shuffle([...foundTargets, ...notFoundTargets]), foundCount, notFoundCount };
+  }
+
+  searchNewSetBtn.addEventListener('click', () => {
+    const gen = generateSearchPracticeTree();
+    if(!gen){
+      flashMsg('Could not generate a tree meeting the size/depth requirement — try again.', 'err');
+      return;
+    }
+    root = gen.root;
+    flashMsg(`Generated a random practice tree (${gen.values.length} nodes, height ${maxDepthOf(root)}).`, 'ok');
+    rebuild();
+
+    const { targets, foundCount, notFoundCount } = pickSearchTargets(gen.values);
+    searchSetHint.textContent = `This set has ${foundCount} number${foundCount > 1 ? 's' : ''} that ${foundCount > 1 ? 'ARE' : 'IS'} in the tree and ${notFoundCount} that ${notFoundCount > 1 ? 'ARE' : 'IS'} NOT — figure out which is which before you search!`;
+    searchSetChips.innerHTML = '';
+    targets.forEach(t => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = t;
+      chip.addEventListener('click', () => {
+        searchTargetInput.value = t;
+        searchTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
+        startPractice();
+      });
+      searchSetChips.appendChild(chip);
+    });
   });
 
   // ---------------- Init ----------------
