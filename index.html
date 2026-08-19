@@ -17,6 +17,7 @@
     --in:#7c3aed;
     --post:#ea580c;
     --bfs:#059669;
+    --search:#db2777;
     --danger:#dc2626;
     --ok:#16a34a;
     --radius:14px;
@@ -134,6 +135,8 @@
   .node.peeked .visit-badge circle{ fill:#6366f1; }
   .node.visited .visit-badge{ opacity:1; }
   .node.visited .visit-badge circle{ fill:#16a34a; }
+  .node.found circle{ fill:#fde68a; stroke:#d97706; stroke-width:4; filter:drop-shadow(0 0 8px rgba(217,119,6,.55)); }
+  .node.not-found circle{ stroke:#dc2626; stroke-width:3; stroke-dasharray:5 3; }
   .edge{ stroke:#cbd5e1; stroke-width:2; }
   .node{ cursor:pointer; }
   .node:hover circle{ stroke:#818cf8; stroke-width:3; }
@@ -149,6 +152,7 @@
   .type-btn[data-t=in].active{ border-color:var(--in); color:var(--in); background:#f5f3ff; }
   .type-btn[data-t=post].active{ border-color:var(--post); color:var(--post); background:#fff7ed; }
   .type-btn[data-t=bfs].active{ border-color:var(--bfs); color:var(--bfs); background:#ecfdf5; }
+  .type-btn[data-t=search].active{ border-color:var(--search); color:var(--search); background:#fdf2f8; }
 
   .pseudo{
     background:#0f172a; color:#e2e8f0; border-radius:10px; padding:10px 12px;
@@ -189,7 +193,7 @@
 
 <header>
   <h1>🌳 Binary Search Tree &amp; Traversal Applet</h1>
-  <p>Build a binary search tree, then watch or practise Depth-First (pre / in / post-order) and Breadth-First traversals.</p>
+  <p>Build a binary search tree, then watch or practise Depth-First (pre / in / post-order) traversals, Breadth-First traversal, and Binary Search.</p>
 </header>
 
 <div class="layout">
@@ -273,7 +277,13 @@
         <button class="type-btn" data-t="post">Post-order</button>
         <button class="type-btn" data-t="bfs">BFS (level-order)</button>
       </div>
+      <button class="type-btn full" data-t="search" style="width:100%;margin-bottom:6px;">🔍 Binary Search</button>
       <div class="pseudo" id="pseudoBox"></div>
+
+      <div id="searchTargetRow" style="display:none;margin-bottom:10px;">
+        <label for="searchTargetInput">Target value to search for</label>
+        <input type="number" id="searchTargetInput" placeholder="e.g. 42">
+      </div>
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="watch">▶ Watch</button>
@@ -292,10 +302,12 @@
           <input type="range" id="speedSlider" min="150" max="1600" value="650" step="50">
           <span id="speedLabel">650ms</span>
         </div>
-        <h3>Visit order so far</h3>
+        <h3 id="orderChipsLabel">Visit order so far</h3>
         <div class="chips" id="orderChips"></div>
-        <h3 id="secondaryTitle">Call stack (open nodes)</h3>
-        <div class="chips" id="secondaryChips"></div>
+        <div id="secondaryWrap">
+          <h3 id="secondaryTitle">Call stack (open nodes)</h3>
+          <div class="chips" id="secondaryChips"></div>
+        </div>
         <div id="bfsTraceWrap" style="display:none;">
           <h3>BFS trace (step-by-step)</h3>
           <div class="table-wrap">
@@ -309,10 +321,11 @@
 
       <!-- PRACTICE TAB -->
       <div class="tab-panel" id="tab-practice">
-        <p style="font-size:.85rem;color:var(--muted);margin:0 0 8px;">
-          Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct <span id="practiceTypeLabel">pre-order</span> traversal — just like the class "unplugged" activity.
+        <p id="practiceInstructions" style="font-size:.85rem;color:var(--muted);margin:0 0 8px;">
+          Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct pre-order traversal — just like the class "unplugged" activity.
         </p>
         <button class="primary full" id="practiceStartBtn">🎯 Start practice</button>
+        <button class="ghost full" id="searchRevealBtn" style="display:none;margin-top:8px;">👁 Reveal all values</button>
         <div class="progress" id="practiceProgress" style="display:none;">
           Progress: <b id="practiceCount">0 / 0</b> &nbsp;·&nbsp; Mistakes: <b id="practiceMistakes">0</b>
         </div>
@@ -434,9 +447,11 @@
       const g = document.createElementNS(NS, 'g');
       g.setAttribute('class', 'node');
       g.setAttribute('data-id', node.id);
+      g.setAttribute('data-value', node.value);
       const circle = document.createElementNS(NS, 'circle');
       circle.setAttribute('cx', px(node)); circle.setAttribute('cy', py(node)); circle.setAttribute('r', R);
       const text = document.createElementNS(NS, 'text');
+      text.setAttribute('class', 'node-label');
       text.setAttribute('x', px(node)); text.setAttribute('y', py(node) + 4);
       text.setAttribute('text-anchor', 'middle');
       text.textContent = node.value;
@@ -467,8 +482,26 @@
 
   function nodeEl(id){ return svg.querySelector(`[data-id="${id}"]`); }
   function clearHighlights(){
-    svg.querySelectorAll('.node').forEach(el => el.classList.remove('current','visited','queued','wrong-flash','peeked'));
+    svg.querySelectorAll('.node').forEach(el => el.classList.remove('current','visited','queued','wrong-flash','peeked','found','not-found'));
     clearPeekedState();
+  }
+
+  // ---------------- Hidden-value mode (Binary Search practice) ----------------
+  // Mirrors the class's "Click to Reveal" activity: node values start hidden
+  // as "?" and are only shown once a node is peeked/selected.
+  let searchValuesHidden = false;
+  function hideAllValues(){
+    searchValuesHidden = true;
+    svg.querySelectorAll('.node-label').forEach(t => t.textContent = '?');
+  }
+  function revealValue(el){
+    const v = el.getAttribute('data-value');
+    const t = el.querySelector('.node-label');
+    if(v !== null && t) t.textContent = v;
+  }
+  function revealAllValues(){
+    searchValuesHidden = false;
+    svg.querySelectorAll('.node').forEach(revealValue);
   }
   // Marks a node visited and stamps its traversal-order number on the badge.
   // Demotes any lingering "peeked" (scratchpad) mark — the real visit wins.
@@ -517,6 +550,26 @@
     }
   }
 
+  // Binary search: at each node, compare the target then step left/right —
+  // mirrors the "Click to Reveal" activity, ending in 'found' or 'not-found'.
+  function* searchGen(node, target){
+    if(!Number.isFinite(target)) return;
+    let current = node;
+    let lastId = null, lastValue = null;
+    while(current){
+      yield { type:'compare', id:current.id, value:current.value, target };
+      if(target === current.value){
+        yield { type:'found', id:current.id, value:current.value, target };
+        return;
+      }
+      lastId = current.id; lastValue = current.value;
+      const goLeft = target < current.value;
+      yield { type: goLeft ? 'go-left' : 'go-right', id:current.id, value:current.value, target };
+      current = goLeft ? current.left : current.right;
+    }
+    yield { type:'not-found', target, lastId, lastValue };
+  }
+
   // Pre-computes the full BFS step table — Step / Visit / Queue after adding
   // children — the same shape as the reference "How BFS works" table, so it
   // can be revealed one row at a time as nodes are visited/selected.
@@ -545,10 +598,11 @@
     ).join('');
   }
 
-  function genFor(type, start){
+  function genFor(type, start, target){
     if(type === 'pre') return preGen(start);
     if(type === 'in') return inGen(start);
     if(type === 'post') return postGen(start);
+    if(type === 'search') return searchGen(start, target);
     return bfsGen(start);
   }
 
@@ -560,9 +614,10 @@
     pre:  '<b>Pre-order</b>(node):\n  1. Visit node\n  2. Traverse left subtree\n  3. Traverse right subtree',
     in:   '<b>In-order</b>(node):\n  1. Traverse left subtree\n  2. Visit node\n  3. Traverse right subtree',
     post: '<b>Post-order</b>(node):\n  1. Traverse left subtree\n  2. Traverse right subtree\n  3. Visit node',
-    bfs:  '<b>BFS / level-order</b>(root):\n  1. Put root in a queue\n  2. Dequeue front, visit it\n  3. Enqueue its children (left, then right)\n  4. Repeat until queue is empty'
+    bfs:  '<b>BFS / level-order</b>(root):\n  1. Put root in a queue\n  2. Dequeue front, visit it\n  3. Enqueue its children (left, then right)\n  4. Repeat until queue is empty',
+    search: '<b>Binary Search</b>(node, target):\n  1. If node is empty → not found\n  2. If target == node.value → found!\n  3. If target &lt; node.value → search left subtree\n  4. Else → search right subtree'
   };
-  const TYPE_LABEL = { pre:'pre-order', in:'in-order', post:'post-order', bfs:'BFS (level-order)' };
+  const TYPE_LABEL = { pre:'pre-order', in:'in-order', post:'post-order', bfs:'BFS (level-order)', search:'binary search' };
 
   // ---------------- App state ----------------
   let activeType = 'pre';
@@ -583,6 +638,12 @@
   const peekChips = document.getElementById('peekChips');
   const peekClearBtn = document.getElementById('peekClearBtn');
   let peekedOrder = [], peekedIds = new Set();
+  const searchTargetRow = document.getElementById('searchTargetRow');
+  const searchTargetInput = document.getElementById('searchTargetInput');
+  const secondaryWrap = document.getElementById('secondaryWrap');
+  const orderChipsLabel = document.getElementById('orderChipsLabel');
+  const searchRevealBtn = document.getElementById('searchRevealBtn');
+  const practiceInstructions = document.getElementById('practiceInstructions');
 
   function setStatus(text, cls){
     statusBar.textContent = text;
@@ -624,7 +685,10 @@
   function resetWatch(){
     pausePlayback();
     clearHighlights();
-    events = Array.from(genFor(activeType, root));
+    const isSearch = activeType === 'search';
+    const target = isSearch ? Number(searchTargetInput.value) : undefined;
+    const targetValid = !isSearch || (searchTargetInput.value.trim() !== '' && Number.isFinite(target));
+    events = (root && targetValid) ? Array.from(genFor(activeType, root, target)) : [];
     stepIndex = 0;
     orderSoFar = []; stackDisp = []; queueDisp = [];
     const bfsWrap = document.getElementById('bfsTraceWrap');
@@ -638,16 +702,46 @@
     document.getElementById('bfsTraceBody').innerHTML = '';
     updateSidePanels();
     const hasTree = !!root;
-    playBtn.disabled = !hasTree;
-    stepBtn.disabled = !hasTree;
+    const canRun = hasTree && targetValid;
+    playBtn.disabled = !canRun;
+    stepBtn.disabled = !canRun;
     playBtn.textContent = '▶ Play';
-    setStatus(hasTree ? 'Ready. Press Play or Step to begin the ' + TYPE_LABEL[activeType] + ' traversal.' : 'Build a tree first.');
+    if(!hasTree){
+      setStatus('Build a tree first.');
+    } else if(isSearch && !targetValid){
+      setStatus('Enter a target value above, then press Play or Step.');
+    } else if(isSearch){
+      setStatus(`Ready. Press Play or Step to search for ${target}.`);
+    } else {
+      setStatus('Ready. Press Play or Step to begin the ' + TYPE_LABEL[activeType] + ' traversal.');
+    }
   }
 
   function applyEvent(ev){
+    if(ev.type === 'not-found'){
+      const lastEl = ev.lastId ? nodeEl(ev.lastId) : null;
+      if(lastEl) lastEl.classList.add('not-found');
+      setStatus(`❌ ${ev.target} is not in this tree — search ends after comparing with ${ev.lastValue ?? 'the root'}.`, 'err');
+      updateSidePanels();
+      return;
+    }
     const el = nodeEl(ev.id);
     if(!el) return;
-    if(ev.type === 'enter'){
+    if(ev.type === 'compare'){
+      orderSoFar.push(ev.value);
+      markVisited(el, orderSoFar.length);
+      el.classList.add('current');
+      setStatus(`Comparing target ${ev.target} with node ${ev.value}…`);
+    } else if(ev.type === 'go-left' || ev.type === 'go-right'){
+      el.classList.remove('current');
+      const dir = ev.type === 'go-left' ? 'left' : 'right';
+      const cmp = ev.type === 'go-left' ? '<' : '>';
+      setStatus(`${ev.target} ${cmp} ${ev.value} → go ${dir}.`);
+    } else if(ev.type === 'found'){
+      el.classList.remove('current');
+      el.classList.add('found');
+      setStatus(`🎯 Found ${ev.target} at this node!`, 'ok');
+    } else if(ev.type === 'enter'){
       stackDisp.push(ev.value);
       el.classList.add('current');
       setStatus(`Exploring node ${ev.value}…`);
@@ -681,7 +775,9 @@
       pausePlayback();
       playBtn.disabled = true;
       stepBtn.disabled = true;
-      setStatus(`🎉 Traversal complete! Order: ${orderSoFar.join(', ')}`, 'ok');
+      if(activeType !== 'search'){
+        setStatus(`🎉 Traversal complete! Order: ${orderSoFar.join(', ')}`, 'ok');
+      }
       svg.querySelectorAll('.node.current').forEach(el => el.classList.remove('current'));
     }
   }
@@ -714,6 +810,7 @@
   stepBtn.addEventListener('click', () => { pausePlayback(); stepForward(); });
   resetBtn.addEventListener('click', resetWatch);
   speedSlider.addEventListener('input', () => speedLabel.textContent = speedSlider.value + 'ms');
+  searchTargetInput.addEventListener('input', () => { if(activeType === 'search') resetWatch(); });
 
   // ---------------- Practice mode ----------------
   const practiceStartBtn = document.getElementById('practiceStartBtn');
@@ -721,15 +818,36 @@
   const practiceCount = document.getElementById('practiceCount');
   const practiceMistakesEl = document.getElementById('practiceMistakes');
   const practiceChips = document.getElementById('practiceChips');
-  const practiceTypeLabel = document.getElementById('practiceTypeLabel');
+
+  let practiceSearchTarget = null;
 
   function startPractice(){
     if(!root) return;
     pausePlayback();
     clearHighlights();
+    revealAllValues();
+
+    if(activeType === 'search'){
+      const target = Number(searchTargetInput.value);
+      if(searchTargetInput.value.trim() === '' || !Number.isFinite(target)){
+        setStatus('Enter a target value above first.', 'err');
+        return;
+      }
+      const evs = Array.from(searchGen(root, target));
+      const last = evs[evs.length - 1];
+      if(!last || last.type !== 'found'){
+        setStatus(`${target} is not in this tree — Practice needs a target that exists, so it can be revealed by clicking real nodes. Try Watch mode to see a "not found" search.`, 'err');
+        return;
+      }
+      practiceSearchTarget = target;
+      practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
+      hideAllValues();
+    } else {
+      practiceExpected = visitOrderIds(activeType);
+    }
+
     practiceOn = true;
     svg.classList.add('practice-on');
-    practiceExpected = visitOrderIds(activeType);
     practiceIndex = 0;
     practiceMistakes = 0;
     practiceProgress.style.display = 'block';
@@ -746,13 +864,19 @@
       bfsPracticeWrap.style.display = 'none';
     }
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
-    setStatus(`Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
+    setStatus(activeType === 'search'
+      ? `Practice: double-click nodes, in order, to reveal the correct binary-search path to ${practiceSearchTarget}. (Single-click also reveals — it's your free look, like the class activity — but only double-clicks count.)`
+      : `Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
   }
 
   function endPracticeSuccess(){
     practiceOn = false;
     svg.classList.remove('practice-on');
-    setStatus(`🎉 Correct! You traversed the tree in ${TYPE_LABEL[activeType]} order with ${practiceMistakes} mistake(s).`, 'ok');
+    if(activeType === 'search'){
+      setStatus(`🎯 Found ${practiceSearchTarget}! You traced the correct binary-search path with ${practiceMistakes} mistake(s).`, 'ok');
+    } else {
+      setStatus(`🎉 Correct! You traversed the tree in ${TYPE_LABEL[activeType]} order with ${practiceMistakes} mistake(s).`, 'ok');
+    }
   }
 
   function onNodePeek(id){
@@ -765,6 +889,8 @@
     el.classList.add('peek');
     clearTimeout(el._peekTimer);
     el._peekTimer = setTimeout(() => el.classList.remove('peek'), 450);
+
+    if(searchValuesHidden) revealValue(el); // "Click to Reveal", like the class activity
 
     if(el.classList.contains('visited')) return; // already formally visited — leave it be
     if(!peekedIds.has(id)){
@@ -785,6 +911,7 @@
     const expected = practiceExpected[practiceIndex];
     if(id === expected){
       practiceIndex++;
+      if(searchValuesHidden) revealValue(el);
       markVisited(el, practiceIndex);
       const node = findNodeById(root, id);
       const chip = document.createElement('span');
@@ -819,7 +946,10 @@
     practiceBfsTrace = [];
     document.getElementById('bfsTracePracticeWrap').style.display = 'none';
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
+    revealAllValues();
   }
+
+  searchRevealBtn.addEventListener('click', revealAllValues);
 
   // ---------------- Tabs & traversal-type selector ----------------
   document.querySelectorAll('.type-btn').forEach(btn => {
@@ -827,8 +957,15 @@
       document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeType = btn.dataset.t;
+      const isSearch = activeType === 'search';
       pseudoBox.innerHTML = PSEUDO[activeType].replace(/\n/g, '<br>');
-      practiceTypeLabel.textContent = TYPE_LABEL[activeType];
+      searchTargetRow.style.display = isSearch ? 'block' : 'none';
+      secondaryWrap.style.display = isSearch ? 'none' : '';
+      searchRevealBtn.style.display = isSearch ? 'block' : 'none';
+      orderChipsLabel.textContent = isSearch ? 'Search path so far' : 'Visit order so far';
+      practiceInstructions.innerHTML = isSearch
+        ? 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target.'
+        : `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
       resetPracticeUI();
       clearHighlights();
       resetWatch();
