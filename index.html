@@ -183,6 +183,16 @@
   .chips{ display:flex; flex-wrap:wrap; gap:6px; min-height:30px; padding:8px; background:#f8fafc; border:1px dashed var(--border); border-radius:8px; }
   .chip{ background:#e2e8f0; border-radius:6px; padding:3px 8px; font-size:.78rem; font-weight:700; font-family:ui-monospace,monospace; }
   .chip.hot{ background:var(--accent); color:#fff; }
+  .chip.done{ background:#bbf7d0; color:#166534; text-decoration:line-through; opacity:.8; }
+  .chip.current{ background:var(--insert); color:#fff; }
+  .insert-flash-value{
+    font-size:1.6rem; font-weight:800; color:var(--insert);
+    animation: insertPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes insertPulse{
+    0%,100%{ transform:scale(1); opacity:1; }
+    50%{ transform:scale(1.08); opacity:.75; }
+  }
 
   .slider-row{ display:flex; align-items:center; gap:8px; }
   .slider-row input[type=range]{ flex:1; }
@@ -235,6 +245,26 @@
       <label for="bulkInput">Comma-separated values (replaces tree)</label>
       <input type="text" id="bulkInput" placeholder="50, 35, 72, 12, 41">
       <button class="full ghost" id="bulkBtn" style="margin-top:8px;">Build from list</button>
+
+      <h3>➕ Practice inserting</h3>
+      <label for="insertQueueInput">Comma-separated values, inserted one at a time onto the current tree</label>
+      <input type="text" id="insertQueueInput" placeholder="45, 21, 22, 23">
+      <div class="row" style="margin-top:8px;">
+        <button class="ghost" id="insertWatchQueueBtn">▶ Watch demo</button>
+        <button class="primary" id="insertPracticeQueueBtn">🎯 Practice</button>
+      </div>
+
+      <div id="insertQueuePanel" style="display:none;margin-top:10px;">
+        <div id="insertFlashWrap" style="text-align:center;padding:10px;border-radius:10px;background:#ecfeff;border:2px dashed var(--insert);">
+          <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Insert next</div>
+          <div id="insertFlashValue" class="insert-flash-value">—</div>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin:6px 0;">
+          Progress: <b id="insertQueueProgress">0 / 0</b> &nbsp;·&nbsp; Mistakes: <b id="insertQueueMistakes">0</b>
+        </div>
+        <div class="chips" id="insertQueueChips"></div>
+        <button class="ghost full" id="insertStopBtn" style="margin-top:8px;">⏹ Stop</button>
+      </div>
 
       <h3>Or generate</h3>
       <div class="stack">
@@ -304,10 +334,7 @@
         <button class="type-btn" data-t="post">Post-order</button>
         <button class="type-btn" data-t="bfs">BFS (level-order)</button>
       </div>
-      <div class="type-grid">
-        <button class="type-btn" data-t="search">🔍 Search</button>
-        <button class="type-btn" data-t="insert">➕ Insert</button>
-      </div>
+      <button class="type-btn full" data-t="search" style="width:100%;margin-bottom:6px;">🔍 Binary Search</button>
       <div class="pseudo" id="pseudoBox"></div>
 
       <div id="searchTargetRow" style="display:none;margin-bottom:10px;">
@@ -973,6 +1000,9 @@
         setStatus(`🎉 Traversal complete! Order: ${orderSoFar.join(', ')}`, 'ok');
       }
       svg.querySelectorAll('.node.current').forEach(el => el.classList.remove('current'));
+      if(activeType === 'insert' && insertQueueMode === 'watch'){
+        setTimeout(advanceInsertWatchQueue, 900);
+      }
     }
   }
 
@@ -985,7 +1015,7 @@
   }
 
   function startPlayback(){
-    if(!root) return;
+    if(!root && activeType !== 'insert') return; // insert can legitimately start from empty
     playing = true;
     playBtn.textContent = '⏸ Pause';
     tick();
@@ -997,7 +1027,7 @@
   }
 
   playBtn.addEventListener('click', () => {
-    if(!root) return;
+    if(!root && activeType !== 'insert') return;
     if(playing) pausePlayback();
     else startPlayback();
   });
@@ -1035,24 +1065,6 @@
       practiceSearchFound = !!last && last.type === 'found';
       practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
       hideAllValues();
-    } else if(activeType === 'insert'){
-      const parsedTarget = parseValue(searchTargetInput.value);
-      if(!parsedTarget.ok){
-        setStatus('Enter a value to insert above first.', 'err');
-        return;
-      }
-      const value = parsedTarget.value;
-      const evs = Array.from(insertGen(root, value));
-      const last = evs[evs.length - 1];
-      practiceInsertValue = value;
-      practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
-      if(last.type === 'insert'){
-        practiceInsertTarget = { parentId: last.parentId, side: last.side };
-      } else if(last.type === 'insert-root'){
-        practiceInsertTarget = { root: true };
-      } else {
-        practiceInsertTarget = null; // duplicate — nothing to insert
-      }
     } else {
       practiceExpected = visitOrderIds(activeType);
     }
@@ -1077,10 +1089,6 @@
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
     if(activeType === 'search'){
       setStatus(`Practice: double-click nodes, in order, along the correct binary-search path for ${practiceSearchTarget}. If the real path runs out, use "Declare not in this tree" below.`);
-    } else if(activeType === 'insert'){
-      setStatus(practiceExpected.length === 0
-        ? `Practice: double-click the dashed "+" to insert ${practiceInsertValue} as the root.`
-        : `Practice: double-click nodes, in order, along the correct path for ${practiceInsertValue}, then double-click the correct dashed "+" slot to insert it.`);
     } else {
       setStatus(`Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
     }
@@ -1091,11 +1099,6 @@
     svg.classList.remove('practice-on');
     if(activeType === 'search'){
       setStatus(`🎯 Found ${practiceSearchTarget}! You traced the correct binary-search path with ${practiceMistakes} mistake(s).`, 'ok');
-    } else if(activeType === 'insert'){
-      setStatus(`✅ Correct — ${practiceInsertValue} is already in the tree, so there's nothing to insert. Enter another value to keep practising.`, 'ok');
-      practiceProgress.style.display = 'none';
-      practiceStartBtn.textContent = '🎯 Start practice';
-      searchTargetInput.value = '';
     } else {
       setStatus(`🎉 Correct! You traversed the tree in ${TYPE_LABEL[activeType]} order with ${practiceMistakes} mistake(s).`, 'ok');
     }
@@ -1150,11 +1153,16 @@
         } else if(activeType === 'insert' && practiceInsertTarget){
           // No node represents "insert here" either — prompt for the ghost slot.
           setStatus(`You've reached the correct spot — now double-click the dashed "+" to insert ${practiceInsertValue}.`);
+        } else if(activeType === 'insert'){
+          // Duplicate — the matching node itself was just correctly selected,
+          // so there's nothing left to create.
+          completeInsertQueueValue(true);
         } else {
           endPracticeSuccess();
         }
       }
     } else {
+      if(activeType === 'insert'){ insertQueueMistakes++; renderInsertQueueUI(); }
       el.classList.add('wrong-flash');
       practiceMistakes++;
       practiceMistakesEl.textContent = String(practiceMistakes);
@@ -1190,6 +1198,7 @@
     if(practiceIndex < practiceExpected.length){
       practiceMistakes++;
       practiceMistakesEl.textContent = String(practiceMistakes);
+      insertQueueMistakes++; renderInsertQueueUI();
       ghostEl.classList.add('wrong-flash');
       setTimeout(() => ghostEl.classList.remove('wrong-flash'), 400);
       setStatus(`Not yet — you still have nodes to compare first (${practiceIndex}/${practiceExpected.length}).`, 'err');
@@ -1203,21 +1212,13 @@
         ghostEl.dataset.side === practiceInsertTarget.side)
     );
     if(correct){
-      const insertedValue = practiceInsertValue;
-      insertValue(insertedValue);
-      practiceOn = false;
-      renderTree();
-      practiceProgress.style.display = 'none';
-      practiceChips.innerHTML = '';
-      practiceStartBtn.textContent = '🎯 Start practice';
-      searchTargetInput.value = '';
-      flashMsg(`Inserted ${insertedValue}.`, 'ok');
-      setStatus(`🎉 Correctly inserted ${insertedValue}! Enter another value to keep building the tree.`, 'ok');
+      completeInsertQueueValue(false);
     } else {
       ghostEl.classList.add('wrong-flash');
       setTimeout(() => ghostEl.classList.remove('wrong-flash'), 400);
       practiceMistakes++;
       practiceMistakesEl.textContent = String(practiceMistakes);
+      insertQueueMistakes++; renderInsertQueueUI();
       setStatus(`That's not the right spot for ${practiceInsertValue} — double-check your comparisons.`, 'err');
     }
   }
@@ -1242,6 +1243,15 @@
     document.getElementById('bfsTracePracticeWrap').style.display = 'none';
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
     revealAllValues();
+    // Any left-panel insert-queue session (Watch or Practice) is also
+    // invalidated by a type switch or tree rebuild — cancel it cleanly.
+    if(insertQueueMode !== null){
+      insertQueueMode = null;
+      insertQueue = [];
+      insertQueuePos = -1;
+      insertQueueMistakes = 0;
+      insertQueuePanel.style.display = 'none';
+    }
   }
 
   searchRevealBtn.addEventListener('click', revealAllValues);
@@ -1253,23 +1263,18 @@
       btn.classList.add('active');
       activeType = btn.dataset.t;
       const isSearch = activeType === 'search';
-      const isInsert = activeType === 'insert';
       pseudoBox.innerHTML = PSEUDO[activeType].replace(/\n/g, '<br>');
-      searchTargetRow.style.display = (isSearch || isInsert) ? 'block' : 'none';
-      searchTargetLabel.textContent = isSearch ? 'Target value to search for' : 'Value to insert';
+      searchTargetRow.style.display = isSearch ? 'block' : 'none';
+      searchTargetLabel.textContent = 'Target value to search for';
       searchTargetInput.placeholder = valueMode === 'number' ? 'e.g. 42' : 'e.g. 0304';
-      secondaryWrap.style.display = (isSearch || isInsert) ? 'none' : '';
+      secondaryWrap.style.display = isSearch ? 'none' : '';
       searchRevealBtn.style.display = isSearch ? 'block' : 'none';
       declareNotFoundBtn.style.display = isSearch ? 'block' : 'none';
       searchPracticeSetRow.style.display = isSearch ? 'block' : 'none';
-      orderChipsLabel.textContent = isSearch ? 'Search path so far' : (isInsert ? 'Insert path so far' : 'Visit order so far');
-      if(isSearch){
-        practiceInstructions.innerHTML = 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target. If the real path runs out before you find it, use <b>Declare "not in this tree"</b>.';
-      } else if(isInsert){
-        practiceInstructions.innerHTML = 'Double-click nodes, in order, to <b>select</b> them along the correct comparison path for the value you\'re inserting, then double-click the dashed <b>"+"</b> slot to create the new node there.';
-      } else {
-        practiceInstructions.innerHTML = `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
-      }
+      orderChipsLabel.textContent = isSearch ? 'Search path so far' : 'Visit order so far';
+      practiceInstructions.innerHTML = isSearch
+        ? 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target. If the real path runs out before you find it, use <b>Declare "not in this tree"</b>.'
+        : `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
       resetPracticeUI();
       renderTree();
       resetWatch();
@@ -1464,6 +1469,179 @@
       searchSetChips.appendChild(chip);
     });
   });
+
+  // ---------------- Insert queue (left panel) ----------------
+  // A comma-separated list of values, inserted one at a time onto the
+  // current tree — either auto-played (Watch) or built by the student
+  // (Practice), advancing to the next value automatically after each one.
+  let insertQueue = [], insertQueuePos = -1, insertQueueMode = null; // 'watch' | 'practice' | null
+  let insertQueueMistakes = 0;
+
+  const insertQueueInput = document.getElementById('insertQueueInput');
+  const insertWatchQueueBtn = document.getElementById('insertWatchQueueBtn');
+  const insertPracticeQueueBtn = document.getElementById('insertPracticeQueueBtn');
+  const insertQueuePanel = document.getElementById('insertQueuePanel');
+  const insertFlashValue = document.getElementById('insertFlashValue');
+  const insertQueueProgress = document.getElementById('insertQueueProgress');
+  const insertQueueMistakesEl = document.getElementById('insertQueueMistakes');
+  const insertQueueChips = document.getElementById('insertQueueChips');
+  const insertStopBtn = document.getElementById('insertStopBtn');
+
+  function parseInsertQueueInput(){
+    const parts = insertQueueInput.value.split(',').map(s => s.trim()).filter(s => s !== '');
+    const parsed = parts.map(parseValue);
+    if(!parsed.length || parsed.some(p => !p.ok)) return null;
+    return parsed.map(p => p.value);
+  }
+
+  function renderInsertQueueUI(){
+    if(insertQueueMode === null){
+      insertQueuePanel.style.display = 'none';
+      return;
+    }
+    insertQueuePanel.style.display = 'block';
+    const current = insertQueue[insertQueuePos];
+    insertFlashValue.textContent = current !== undefined ? current : '—';
+    insertQueueProgress.textContent = `${Math.min(insertQueuePos + 1, insertQueue.length)} / ${insertQueue.length}`;
+    insertQueueMistakesEl.textContent = String(insertQueueMistakes);
+    insertQueueChips.innerHTML = '';
+    insertQueue.forEach((v, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip' + (i < insertQueuePos ? ' done' : (i === insertQueuePos ? ' current' : ''));
+      chip.textContent = v;
+      insertQueueChips.appendChild(chip);
+    });
+  }
+
+  // Restores the right panel to whichever traversal type it currently shows,
+  // now that the left-panel queue is done driving activeType='insert'.
+  function restoreActiveTypeAfterQueue(){
+    const activeBtn = document.querySelector('.type-btn.active');
+    activeType = activeBtn ? activeBtn.dataset.t : 'pre';
+    renderTree();
+    resetWatch();
+  }
+
+  function stopInsertQueue(){
+    if(insertQueueMode === null) return;
+    pausePlayback();
+    practiceOn = false;
+    svg.classList.remove('practice-on');
+    insertQueueMode = null;
+    insertQueue = [];
+    insertQueuePos = -1;
+    insertQueueMistakes = 0;
+    insertQueuePanel.style.display = 'none';
+    restoreActiveTypeAfterQueue();
+    flashMsg('Stopped insert practice.');
+  }
+  insertStopBtn.addEventListener('click', stopInsertQueue);
+
+  function finishInsertQueue(){
+    const count = insertQueue.length;
+    const mistakes = insertQueueMistakes;
+    insertQueueMode = null;
+    insertQueue = [];
+    insertQueuePos = -1;
+    insertQueueMistakes = 0;
+    insertQueuePanel.style.display = 'none';
+    practiceOn = false;
+    svg.classList.remove('practice-on');
+    restoreActiveTypeAfterQueue();
+    flashMsg(`Finished inserting ${count} value(s)` + (mistakes ? ` with ${mistakes} mistake(s).` : '.'), 'ok');
+  }
+
+  // Called once a value is successfully placed (or found to be a duplicate) —
+  // shared by both the ghost-slot success path and the duplicate auto-success
+  // path, so the queue always advances the same way regardless of which.
+  function completeInsertQueueValue(wasDuplicate){
+    const value = practiceInsertValue;
+    practiceOn = false;
+    if(!wasDuplicate){
+      insertValue(value);
+      renderTree();
+    }
+    setStatus(wasDuplicate
+      ? `✅ ${value} is already in the tree — nothing to insert.`
+      : `🎉 Correctly inserted ${value}!`, 'ok');
+    if(insertQueueMode === 'practice'){
+      advanceInsertPracticeQueue();
+    }
+  }
+
+  function beginInsertPracticeFor(value){
+    clearHighlights();
+    const evs = Array.from(insertGen(root, value));
+    const last = evs[evs.length - 1];
+    practiceInsertValue = value;
+    practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
+    if(last.type === 'insert'){
+      practiceInsertTarget = { parentId: last.parentId, side: last.side };
+    } else if(last.type === 'insert-root'){
+      practiceInsertTarget = { root: true };
+    } else {
+      practiceInsertTarget = null; // duplicate
+    }
+    practiceOn = true;
+    svg.classList.add('practice-on');
+    practiceIndex = 0;
+    practiceMistakes = 0;
+    setStatus(practiceExpected.length === 0
+      ? `Insert ${value}: double-click the dashed "+" to add it as the root.`
+      : `Insert ${value}: double-click nodes, in order, along the correct path, then double-click the "+" slot.`);
+  }
+
+  function advanceInsertPracticeQueue(){
+    insertQueuePos++;
+    if(insertQueuePos >= insertQueue.length){ finishInsertQueue(); return; }
+    beginInsertPracticeFor(insertQueue[insertQueuePos]);
+    renderInsertQueueUI();
+  }
+
+  function startInsertPracticeQueue(){
+    const values = parseInsertQueueInput();
+    if(!values){
+      flashMsg(valueMode === 'number' ? 'Enter a comma-separated list of numbers to insert.' : 'Enter a comma-separated list of values to insert.', 'err');
+      return;
+    }
+    resetPracticeUI(); // clean slate: cancels any other practice/queue session
+    pausePlayback();
+    activeType = 'insert';
+    insertQueue = values;
+    insertQueuePos = -1;
+    insertQueueMode = 'practice';
+    insertQueueMistakes = 0;
+    renderTree(); // ghosts (or the root ghost, if empty) appear
+    advanceInsertPracticeQueue();
+  }
+  insertPracticeQueueBtn.addEventListener('click', startInsertPracticeQueue);
+
+  function advanceInsertWatchQueue(){
+    insertQueuePos++;
+    renderInsertQueueUI();
+    if(insertQueuePos >= insertQueue.length){ finishInsertQueue(); return; }
+    searchTargetInput.value = String(insertQueue[insertQueuePos]);
+    resetWatch();
+    startPlayback();
+  }
+
+  function startInsertWatchQueue(){
+    const values = parseInsertQueueInput();
+    if(!values){
+      flashMsg(valueMode === 'number' ? 'Enter a comma-separated list of numbers to insert.' : 'Enter a comma-separated list of values to insert.', 'err');
+      return;
+    }
+    resetPracticeUI();
+    pausePlayback();
+    activeType = 'insert';
+    insertQueue = values;
+    insertQueuePos = -1;
+    insertQueueMode = 'watch';
+    insertQueueMistakes = 0;
+    renderTree();
+    advanceInsertWatchQueue();
+  }
+  insertWatchQueueBtn.addEventListener('click', startInsertWatchQueue);
 
   // ---------------- Init ----------------
   pseudoBox.innerHTML = PSEUDO.pre.replace(/\n/g, '<br>');
