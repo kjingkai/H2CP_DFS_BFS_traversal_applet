@@ -207,6 +207,14 @@
     <div class="panel">
       <h2>🔨 Build the tree</h2>
 
+      <div class="tabs" style="margin:0 0 12px;">
+        <button class="tab-btn active" id="modeNumberBtn" type="button">🔢 Numbers</button>
+        <button class="tab-btn" id="modeTextBtn" type="button">🔤 Text</button>
+      </div>
+      <p id="modeHint" style="font-size:.78rem;color:var(--muted);margin:-6px 0 12px;">
+        Values compare numerically (e.g. 5 &lt; 42).
+      </p>
+
       <label for="insertInput">Insert one value</label>
       <div class="row">
         <input type="number" id="insertInput" placeholder="e.g. 42">
@@ -392,6 +400,24 @@
     const r = insertInto(root, value);
     root = r.node;
     return r.inserted;
+  }
+
+  // ---------------- Value mode (Numbers vs Text) ----------------
+  // The BST/traversal/search logic itself is type-agnostic (JS's <, >, ===
+  // already do lexicographic comparison on strings) — this only controls how
+  // raw input text is parsed, so values like "0304" keep their leading zero
+  // instead of being coerced through Number() and silently becoming 304.
+  let valueMode = 'number'; // 'number' | 'text'
+
+  function parseValue(raw){
+    const trimmed = String(raw).trim();
+    if(trimmed === '') return { ok: false };
+    if(valueMode === 'number'){
+      const n = Number(trimmed);
+      if(Number.isNaN(n)) return { ok: false };
+      return { ok: true, value: n };
+    }
+    return { ok: true, value: trimmed };
   }
 
   function shuffle(arr){
@@ -600,7 +626,7 @@
   // Binary search: at each node, compare the target then step left/right —
   // mirrors the "Click to Reveal" activity, ending in 'found' or 'not-found'.
   function* searchGen(node, target){
-    if(!Number.isFinite(target)) return;
+    if(target === undefined || target === null || target === '') return;
     let current = node;
     let lastId = null, lastValue = null;
     while(current){
@@ -738,8 +764,9 @@
     pausePlayback();
     clearHighlights();
     const isSearch = activeType === 'search';
-    const target = isSearch ? Number(searchTargetInput.value) : undefined;
-    const targetValid = !isSearch || (searchTargetInput.value.trim() !== '' && Number.isFinite(target));
+    const parsedTarget = isSearch ? parseValue(searchTargetInput.value) : { ok: true };
+    const target = isSearch ? parsedTarget.value : undefined;
+    const targetValid = !isSearch || parsedTarget.ok;
     events = (root && targetValid) ? Array.from(genFor(activeType, root, target)) : [];
     stepIndex = 0;
     orderSoFar = []; stackDisp = []; queueDisp = [];
@@ -880,11 +907,12 @@
     revealAllValues();
 
     if(activeType === 'search'){
-      const target = Number(searchTargetInput.value);
-      if(searchTargetInput.value.trim() === '' || !Number.isFinite(target)){
+      const parsedTarget = parseValue(searchTargetInput.value);
+      if(!parsedTarget.ok){
         setStatus('Enter a target value above first.', 'err');
         return;
       }
+      const target = parsedTarget.value;
       const evs = Array.from(searchGen(root, target));
       const last = evs[evs.length - 1];
       practiceSearchTarget = target;
@@ -1081,8 +1109,9 @@
 
   document.getElementById('insertBtn').addEventListener('click', () => {
     const input = document.getElementById('insertInput');
-    const v = Number(input.value);
-    if(input.value.trim() === '' || Number.isNaN(v)){ flashMsg('Enter a number to insert.', 'err'); return; }
+    const parsed = parseValue(input.value);
+    if(!parsed.ok){ flashMsg(valueMode === 'number' ? 'Enter a number to insert.' : 'Enter a value to insert.', 'err'); return; }
+    const v = parsed.value;
     const ok = insertValue(v);
     flashMsg(ok ? `Inserted ${v}.` : `${v} is already in the tree — duplicates are ignored.`, ok ? 'ok' : 'err');
     input.value = '';
@@ -1096,8 +1125,12 @@
   document.getElementById('bulkBtn').addEventListener('click', () => {
     const raw = document.getElementById('bulkInput').value;
     const parts = raw.split(',').map(s => s.trim()).filter(s => s !== '');
-    const values = parts.map(Number);
-    if(!values.length || values.some(Number.isNaN)){ flashMsg('Enter a comma-separated list of numbers.', 'err'); return; }
+    const parsedParts = parts.map(parseValue);
+    if(!parsedParts.length || parsedParts.some(p => !p.ok)){
+      flashMsg(valueMode === 'number' ? 'Enter a comma-separated list of numbers.' : 'Enter a comma-separated list of values.', 'err');
+      return;
+    }
+    const values = parsedParts.map(p => p.value);
     root = null;
     let dupes = 0;
     values.forEach(v => { if(!insertValue(v)) dupes++; });
@@ -1129,6 +1162,47 @@
     flashMsg('Tree cleared.');
     rebuild();
   });
+
+  // ---------------- Value mode toggle (Numbers vs Text) ----------------
+  const modeNumberBtn = document.getElementById('modeNumberBtn');
+  const modeTextBtn = document.getElementById('modeTextBtn');
+  const modeHint = document.getElementById('modeHint');
+  const randomBtn = document.getElementById('randomBtn');
+  const randomSizeInput = document.getElementById('randomSize');
+  const exampleBtn = document.getElementById('exampleBtn');
+
+  function setValueMode(mode){
+    if(mode === valueMode) return;
+    valueMode = mode;
+    modeNumberBtn.classList.toggle('active', mode === 'number');
+    modeTextBtn.classList.toggle('active', mode === 'text');
+    modeHint.textContent = mode === 'number'
+      ? 'Values compare numerically (e.g. 5 < 42).'
+      : 'Values compare as text, left-to-right (e.g. "0304" < "1225") — leading zeros are kept.';
+
+    const insertInput = document.getElementById('insertInput');
+    insertInput.type = mode === 'number' ? 'number' : 'text';
+    insertInput.placeholder = mode === 'number' ? 'e.g. 42' : 'e.g. 0304';
+    document.getElementById('bulkInput').placeholder = mode === 'number' ? '50, 35, 72, 12, 41' : '0304, 1225, 0101, 0704';
+    searchTargetInput.type = mode === 'number' ? 'number' : 'text';
+    searchTargetInput.placeholder = mode === 'number' ? 'e.g. 42' : 'e.g. 0304';
+
+    // These generators only make sense for numbers — disable rather than
+    // guess at a "random string" scheme, or mix types in one tree.
+    const numberOnly = mode === 'text';
+    randomBtn.disabled = numberOnly;
+    randomSizeInput.disabled = numberOnly;
+    exampleBtn.disabled = numberOnly;
+    searchNewSetBtn.disabled = numberOnly;
+
+    root = null;
+    flashMsg(mode === 'text'
+      ? 'Switched to Text mode — tree cleared. Use Insert or Build from list to add text values.'
+      : 'Switched to Numbers mode — tree cleared.');
+    rebuild();
+  }
+  modeNumberBtn.addEventListener('click', () => setValueMode('number'));
+  modeTextBtn.addEventListener('click', () => setValueMode('text'));
 
   // ---------------- Search practice-set generator ----------------
   // Rejection-samples a random tree until it has >=20 nodes and >=5 levels
