@@ -150,7 +150,7 @@
 
   /* ---- insert mode: empty-slot placeholders ---- */
   .ghost-slot{ cursor:pointer; }
-  .ghost-slot circle{ fill:none; stroke:#94a3b8; stroke-width:2; stroke-dasharray:4 3; opacity:.55; transition:opacity .15s,stroke .15s; }
+  .ghost-slot circle{ fill:none; stroke:#94a3b8; stroke-width:2; stroke-dasharray:4 3; opacity:.55; transition:opacity .15s,stroke .15s; pointer-events:all; }
   .ghost-slot text{ font:700 15px sans-serif; fill:#94a3b8; pointer-events:none; user-select:none; }
   .ghost-slot:hover circle{ opacity:1; stroke:var(--insert); }
   .ghost-slot.wrong-flash circle{ fill:#fecaca !important; stroke:#dc2626 !important; opacity:1 !important; stroke-dasharray:none !important; }
