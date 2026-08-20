@@ -18,6 +18,7 @@
     --post:#ea580c;
     --bfs:#059669;
     --search:#db2777;
+    --insert:#0891b2;
     --danger:#dc2626;
     --ok:#16a34a;
     --radius:14px;
@@ -141,10 +142,18 @@
   .node.visited .visit-badge circle{ fill:#16a34a; }
   .node.found circle{ fill:#fde68a; stroke:#d97706; stroke-width:4; filter:drop-shadow(0 0 8px rgba(217,119,6,.55)); }
   .node.not-found circle{ stroke:#dc2626; stroke-width:3; stroke-dasharray:5 3; }
+  .node.duplicate circle{ stroke:#d97706; stroke-width:3; stroke-dasharray:3 2; }
   .edge{ stroke:#cbd5e1; stroke-width:2; }
   .node{ cursor:pointer; }
   .node:hover circle{ stroke:#818cf8; stroke-width:3; }
   svg.practice-on .node:not(.visited) circle{ stroke-dasharray:4 2; }
+
+  /* ---- insert mode: empty-slot placeholders ---- */
+  .ghost-slot{ cursor:pointer; }
+  .ghost-slot circle{ fill:none; stroke:#94a3b8; stroke-width:2; stroke-dasharray:4 3; opacity:.55; transition:opacity .15s,stroke .15s; }
+  .ghost-slot text{ font:700 15px sans-serif; fill:#94a3b8; pointer-events:none; user-select:none; }
+  .ghost-slot:hover circle{ opacity:1; stroke:var(--insert); }
+  .ghost-slot.wrong-flash circle{ fill:#fecaca !important; stroke:#dc2626 !important; opacity:1 !important; stroke-dasharray:none !important; }
 
   /* ---- right panel: traversal type selector ---- */
   .type-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
@@ -157,6 +166,7 @@
   .type-btn[data-t=post].active{ border-color:var(--post); color:var(--post); background:#fff7ed; }
   .type-btn[data-t=bfs].active{ border-color:var(--bfs); color:var(--bfs); background:#ecfdf5; }
   .type-btn[data-t=search].active{ border-color:var(--search); color:var(--search); background:#fdf2f8; }
+  .type-btn[data-t=insert].active{ border-color:var(--insert); color:var(--insert); background:#ecfeff; }
 
   .pseudo{
     background:#0f172a; color:#e2e8f0; border-radius:10px; padding:10px 12px;
@@ -294,11 +304,14 @@
         <button class="type-btn" data-t="post">Post-order</button>
         <button class="type-btn" data-t="bfs">BFS (level-order)</button>
       </div>
-      <button class="type-btn full" data-t="search" style="width:100%;margin-bottom:6px;">🔍 Binary Search</button>
+      <div class="type-grid">
+        <button class="type-btn" data-t="search">🔍 Search</button>
+        <button class="type-btn" data-t="insert">➕ Insert</button>
+      </div>
       <div class="pseudo" id="pseudoBox"></div>
 
       <div id="searchTargetRow" style="display:none;margin-bottom:10px;">
-        <label for="searchTargetInput">Target value to search for</label>
+        <label for="searchTargetInput" id="searchTargetLabel">Target value to search for</label>
         <input type="number" id="searchTargetInput" placeholder="e.g. 42">
       </div>
 
@@ -482,6 +495,19 @@
   function renderTree(){
     svg.innerHTML = '';
     if(!root){
+      if(activeType === 'insert'){
+        // Even an empty tree needs somewhere to click — the very first
+        // insertion (creating the root) is part of the algorithm too.
+        svg.style.display = 'block';
+        emptyState.style.display = 'none';
+        const w = 200, h = 150;
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        baseSvgWidth = w; baseSvgHeight = h;
+        applyZoom();
+        drawGhostSlot(w / 2, h / 2, { root: true });
+        caption.innerHTML = `Nodes: <b>0</b> &nbsp;·&nbsp; Height: <b>—</b>`;
+        return;
+      }
       svg.style.display = 'none';
       emptyState.style.display = 'block';
       caption.textContent = '';
@@ -493,7 +519,9 @@
 
     const { count, maxDepth } = layoutTree();
     const width = MARGIN_X * 2 + Math.max(count - 1, 0) * X_SPACING;
-    const height = MARGIN_Y * 2 + maxDepth * Y_SPACING + R;
+    // Insert mode's ghost slots sit one half-level below the deepest real
+    // node, so reserve extra room for them beyond the usual bottom margin.
+    const height = MARGIN_Y * 2 + maxDepth * Y_SPACING + R + (activeType === 'insert' ? 50 : 0);
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     baseSvgWidth = width;
     baseSvgHeight = height;
@@ -551,6 +579,45 @@
     })(root);
 
     caption.innerHTML = `Nodes: <b>${count}</b> &nbsp;·&nbsp; Height: <b>${maxDepth}</b>`;
+    renderGhosts();
+  }
+
+  // ---------------- Insert-mode empty-slot placeholders ----------------
+  // A dashed "+" circle marking a spot a new node could attach to. Positions
+  // are derived straight from the real layout, so no separate layout pass is
+  // needed — they just sit one half-step below/beside their parent.
+  function drawGhostSlot(cx, cy, meta){
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'ghost-slot');
+    if(meta.root){
+      g.setAttribute('data-root', 'true');
+    } else {
+      g.setAttribute('data-parent-id', meta.parentId);
+      g.setAttribute('data-side', meta.side);
+    }
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', cx); circle.setAttribute('cy', cy); circle.setAttribute('r', R * 0.72);
+    const text = document.createElementNS(NS, 'text');
+    text.setAttribute('x', cx); text.setAttribute('y', cy + 5);
+    text.setAttribute('text-anchor', 'middle');
+    text.textContent = '+';
+    g.appendChild(circle); g.appendChild(text);
+    g.addEventListener('dblclick', (e) => { e.preventDefault(); onGhostSelect(g); });
+    svg.appendChild(g);
+  }
+
+  function renderGhosts(){
+    svg.querySelectorAll('.ghost-slot').forEach(el => el.remove());
+    if(activeType !== 'insert' || !root) return;
+    layoutTree(); // make sure node.x/node.y reflect the current shape
+    const px = n => MARGIN_X + n.x * X_SPACING;
+    const py = n => MARGIN_Y + n.y * Y_SPACING;
+    (function walk(node){
+      if(!node) return;
+      if(!node.left) drawGhostSlot(px(node) - X_SPACING * 0.5, py(node) + Y_SPACING * 0.85, { parentId: node.id, side: 'left' });
+      if(!node.right) drawGhostSlot(px(node) + X_SPACING * 0.5, py(node) + Y_SPACING * 0.85, { parentId: node.id, side: 'right' });
+      walk(node.left); walk(node.right);
+    })(root);
   }
 
   function nodeEl(id){ return svg.querySelector(`[data-id="${id}"]`); }
@@ -643,6 +710,31 @@
     yield { type:'not-found', target, lastId, lastValue };
   }
 
+  // Insertion: walk down comparing at each real node, same as search, but
+  // ends by creating a new node — either as the root of an empty tree, as a
+  // new child once an empty slot is reached, or 'duplicate' if it's already there.
+  function* insertGen(node, value){
+    if(value === undefined || value === null || value === '') return;
+    if(!node){ yield { type:'insert-root', value }; return; }
+    let current = node;
+    while(true){
+      yield { type:'compare', id:current.id, value:current.value, target:value };
+      if(value === current.value){
+        yield { type:'duplicate', id:current.id, value:current.value, target:value };
+        return;
+      }
+      const goLeft = value < current.value;
+      const child = goLeft ? current.left : current.right;
+      yield { type: goLeft ? 'go-left' : 'go-right', id:current.id, value:current.value, target:value };
+      if(child){
+        current = child;
+      } else {
+        yield { type:'insert', parentId:current.id, parentValue:current.value, side: goLeft ? 'left' : 'right', value };
+        return;
+      }
+    }
+  }
+
   // Pre-computes the full BFS step table — Step / Visit / Queue after adding
   // children — the same shape as the reference "How BFS works" table, so it
   // can be revealed one row at a time as nodes are visited/selected.
@@ -676,6 +768,7 @@
     if(type === 'in') return inGen(start);
     if(type === 'post') return postGen(start);
     if(type === 'search') return searchGen(start, target);
+    if(type === 'insert') return insertGen(start, target);
     return bfsGen(start);
   }
 
@@ -688,9 +781,10 @@
     in:   '<b>In-order</b>(node):\n  1. Traverse left subtree\n  2. Visit node\n  3. Traverse right subtree',
     post: '<b>Post-order</b>(node):\n  1. Traverse left subtree\n  2. Traverse right subtree\n  3. Visit node',
     bfs:  '<b>BFS / level-order</b>(root):\n  1. Put root in a queue\n  2. Dequeue front, visit it\n  3. Enqueue its children (left, then right)\n  4. Repeat until queue is empty',
-    search: '<b>Binary Search</b>(node, target):\n  1. If node is empty → not found\n  2. If target == node.value → found!\n  3. If target &lt; node.value → search left subtree\n  4. Else → search right subtree'
+    search: '<b>Binary Search</b>(node, target):\n  1. If node is empty → not found\n  2. If target == node.value → found!\n  3. If target &lt; node.value → search left subtree\n  4. Else → search right subtree',
+    insert: '<b>Insert</b>(node, value):\n  1. If tree is empty → value becomes the root\n  2. If value == node.value → already exists, stop\n  3. If value &lt; node.value → go left (attach here if empty)\n  4. Else → go right (attach here if empty)'
   };
-  const TYPE_LABEL = { pre:'pre-order', in:'in-order', post:'post-order', bfs:'BFS (level-order)', search:'binary search' };
+  const TYPE_LABEL = { pre:'pre-order', in:'in-order', post:'post-order', bfs:'BFS (level-order)', search:'binary search', insert:'insert' };
 
   // ---------------- App state ----------------
   let activeType = 'pre';
@@ -713,6 +807,7 @@
   let peekedOrder = [], peekedIds = new Set();
   const searchTargetRow = document.getElementById('searchTargetRow');
   const searchTargetInput = document.getElementById('searchTargetInput');
+  const searchTargetLabel = document.getElementById('searchTargetLabel');
   const secondaryWrap = document.getElementById('secondaryWrap');
   const orderChipsLabel = document.getElementById('orderChipsLabel');
   const searchRevealBtn = document.getElementById('searchRevealBtn');
@@ -764,10 +859,12 @@
     pausePlayback();
     clearHighlights();
     const isSearch = activeType === 'search';
-    const parsedTarget = isSearch ? parseValue(searchTargetInput.value) : { ok: true };
-    const target = isSearch ? parsedTarget.value : undefined;
-    const targetValid = !isSearch || parsedTarget.ok;
-    events = (root && targetValid) ? Array.from(genFor(activeType, root, target)) : [];
+    const isInsert = activeType === 'insert';
+    const needsTarget = isSearch || isInsert;
+    const parsedTarget = needsTarget ? parseValue(searchTargetInput.value) : { ok: true };
+    const target = needsTarget ? parsedTarget.value : undefined;
+    const targetValid = !needsTarget || parsedTarget.ok;
+    events = targetValid ? Array.from(genFor(activeType, root, target)) : [];
     stepIndex = 0;
     orderSoFar = []; stackDisp = []; queueDisp = [];
     const bfsWrap = document.getElementById('bfsTraceWrap');
@@ -781,16 +878,20 @@
     document.getElementById('bfsTraceBody').innerHTML = '';
     updateSidePanels();
     const hasTree = !!root;
-    const canRun = hasTree && targetValid;
+    // An empty tree is a valid starting point for Insert (creating the root
+    // is itself part of the algorithm) but not for anything else.
+    const canRun = (hasTree || isInsert) && targetValid;
     playBtn.disabled = !canRun;
     stepBtn.disabled = !canRun;
     playBtn.textContent = '▶ Play';
-    if(!hasTree){
+    if(!hasTree && !isInsert){
       setStatus('Build a tree first.');
-    } else if(isSearch && !targetValid){
-      setStatus('Enter a target value above, then press Play or Step.');
+    } else if(needsTarget && !targetValid){
+      setStatus(isInsert ? 'Enter a value to insert above, then press Play or Step.' : 'Enter a target value above, then press Play or Step.');
     } else if(isSearch){
       setStatus(`Ready. Press Play or Step to search for ${target}.`);
+    } else if(isInsert){
+      setStatus(`Ready. Press Play or Step to insert ${target}.`);
     } else {
       setStatus('Ready. Press Play or Step to begin the ' + TYPE_LABEL[activeType] + ' traversal.');
     }
@@ -804,9 +905,23 @@
       updateSidePanels();
       return;
     }
+    if(ev.type === 'insert' || ev.type === 'insert-root'){
+      // Terminal and tree-mutating — insert the real node and redraw, rather
+      // than trying to highlight a node that doesn't exist yet.
+      insertValue(ev.value);
+      renderTree();
+      setStatus(ev.type === 'insert-root'
+        ? `✅ Inserted ${ev.value} as the root (tree was empty).`
+        : `✅ Inserted ${ev.value} as the ${ev.side} child of ${ev.parentValue}.`, 'ok');
+      updateSidePanels();
+      return;
+    }
     const el = nodeEl(ev.id);
     if(!el) return;
-    if(ev.type === 'compare'){
+    if(ev.type === 'duplicate'){
+      el.classList.add('duplicate');
+      setStatus(`⚠️ ${ev.target} is already in the tree — nothing to insert.`, 'err');
+    } else if(ev.type === 'compare'){
       orderSoFar.push(ev.value);
       markVisited(el, orderSoFar.length);
       el.classList.add('current');
@@ -854,7 +969,7 @@
       pausePlayback();
       playBtn.disabled = true;
       stepBtn.disabled = true;
-      if(activeType !== 'search'){
+      if(activeType !== 'search' && activeType !== 'insert'){
         setStatus(`🎉 Traversal complete! Order: ${orderSoFar.join(', ')}`, 'ok');
       }
       svg.querySelectorAll('.node.current').forEach(el => el.classList.remove('current'));
@@ -889,7 +1004,7 @@
   stepBtn.addEventListener('click', () => { pausePlayback(); stepForward(); });
   resetBtn.addEventListener('click', resetWatch);
   speedSlider.addEventListener('input', () => speedLabel.textContent = speedSlider.value + 'ms');
-  searchTargetInput.addEventListener('input', () => { if(activeType === 'search') resetWatch(); });
+  searchTargetInput.addEventListener('input', () => { if(activeType === 'search' || activeType === 'insert') resetWatch(); });
 
   // ---------------- Practice mode ----------------
   const practiceStartBtn = document.getElementById('practiceStartBtn');
@@ -899,9 +1014,10 @@
   const practiceChips = document.getElementById('practiceChips');
 
   let practiceSearchTarget = null, practiceSearchFound = true;
+  let practiceInsertValue = null, practiceInsertTarget = null;
 
   function startPractice(){
-    if(!root) return;
+    if(!root && activeType !== 'insert') return;
     pausePlayback();
     clearHighlights();
     revealAllValues();
@@ -919,6 +1035,24 @@
       practiceSearchFound = !!last && last.type === 'found';
       practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
       hideAllValues();
+    } else if(activeType === 'insert'){
+      const parsedTarget = parseValue(searchTargetInput.value);
+      if(!parsedTarget.ok){
+        setStatus('Enter a value to insert above first.', 'err');
+        return;
+      }
+      const value = parsedTarget.value;
+      const evs = Array.from(insertGen(root, value));
+      const last = evs[evs.length - 1];
+      practiceInsertValue = value;
+      practiceExpected = evs.filter(e => e.type === 'compare').map(e => e.id);
+      if(last.type === 'insert'){
+        practiceInsertTarget = { parentId: last.parentId, side: last.side };
+      } else if(last.type === 'insert-root'){
+        practiceInsertTarget = { root: true };
+      } else {
+        practiceInsertTarget = null; // duplicate — nothing to insert
+      }
     } else {
       practiceExpected = visitOrderIds(activeType);
     }
@@ -941,9 +1075,15 @@
       bfsPracticeWrap.style.display = 'none';
     }
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
-    setStatus(activeType === 'search'
-      ? `Practice: double-click nodes, in order, along the correct binary-search path for ${practiceSearchTarget}. If the real path runs out, use "Declare not in this tree" below.`
-      : `Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
+    if(activeType === 'search'){
+      setStatus(`Practice: double-click nodes, in order, along the correct binary-search path for ${practiceSearchTarget}. If the real path runs out, use "Declare not in this tree" below.`);
+    } else if(activeType === 'insert'){
+      setStatus(practiceExpected.length === 0
+        ? `Practice: double-click the dashed "+" to insert ${practiceInsertValue} as the root.`
+        : `Practice: double-click nodes, in order, along the correct path for ${practiceInsertValue}, then double-click the correct dashed "+" slot to insert it.`);
+    } else {
+      setStatus(`Practice: double-click the nodes in ${TYPE_LABEL[activeType]} order. (Single-click just previews a node.)`);
+    }
   }
 
   function endPracticeSuccess(){
@@ -951,6 +1091,11 @@
     svg.classList.remove('practice-on');
     if(activeType === 'search'){
       setStatus(`🎯 Found ${practiceSearchTarget}! You traced the correct binary-search path with ${practiceMistakes} mistake(s).`, 'ok');
+    } else if(activeType === 'insert'){
+      setStatus(`✅ Correct — ${practiceInsertValue} is already in the tree, so there's nothing to insert. Enter another value to keep practising.`, 'ok');
+      practiceProgress.style.display = 'none';
+      practiceStartBtn.textContent = '🎯 Start practice';
+      searchTargetInput.value = '';
     } else {
       setStatus(`🎉 Correct! You traversed the tree in ${TYPE_LABEL[activeType]} order with ${practiceMistakes} mistake(s).`, 'ok');
     }
@@ -1002,6 +1147,9 @@
           // No node represents "not found" — the last real node on the path
           // was just correctly selected, so prompt for the explicit declaration.
           setStatus(`You've checked every real node on the path to ${practiceSearchTarget} — now use "Declare not in this tree" below.`);
+        } else if(activeType === 'insert' && practiceInsertTarget){
+          // No node represents "insert here" either — prompt for the ghost slot.
+          setStatus(`You've reached the correct spot — now double-click the dashed "+" to insert ${practiceInsertValue}.`);
         } else {
           endPracticeSuccess();
         }
@@ -1034,6 +1182,46 @@
   }
   declareNotFoundBtn.addEventListener('click', onDeclareNotFound);
 
+  // Double-clicking an empty-slot placeholder during Insert practice — the
+  // "create the new node here" action. Only counts once the real comparison
+  // path has been fully, correctly walked (checked via practiceIndex).
+  function onGhostSelect(ghostEl){
+    if(!practiceOn || activeType !== 'insert') return;
+    if(practiceIndex < practiceExpected.length){
+      practiceMistakes++;
+      practiceMistakesEl.textContent = String(practiceMistakes);
+      ghostEl.classList.add('wrong-flash');
+      setTimeout(() => ghostEl.classList.remove('wrong-flash'), 400);
+      setStatus(`Not yet — you still have nodes to compare first (${practiceIndex}/${practiceExpected.length}).`, 'err');
+      return;
+    }
+    const isRootGhost = ghostEl.dataset.root === 'true';
+    const correct = !!practiceInsertTarget && (
+      (practiceInsertTarget.root && isRootGhost) ||
+      (!practiceInsertTarget.root && !isRootGhost &&
+        ghostEl.dataset.parentId === practiceInsertTarget.parentId &&
+        ghostEl.dataset.side === practiceInsertTarget.side)
+    );
+    if(correct){
+      const insertedValue = practiceInsertValue;
+      insertValue(insertedValue);
+      practiceOn = false;
+      renderTree();
+      practiceProgress.style.display = 'none';
+      practiceChips.innerHTML = '';
+      practiceStartBtn.textContent = '🎯 Start practice';
+      searchTargetInput.value = '';
+      flashMsg(`Inserted ${insertedValue}.`, 'ok');
+      setStatus(`🎉 Correctly inserted ${insertedValue}! Enter another value to keep building the tree.`, 'ok');
+    } else {
+      ghostEl.classList.add('wrong-flash');
+      setTimeout(() => ghostEl.classList.remove('wrong-flash'), 400);
+      practiceMistakes++;
+      practiceMistakesEl.textContent = String(practiceMistakes);
+      setStatus(`That's not the right spot for ${practiceInsertValue} — double-check your comparisons.`, 'err');
+    }
+  }
+
   function findNodeById(node, id){
     if(!node) return null;
     if(node.id === id) return node;
@@ -1049,6 +1237,8 @@
     practiceChips.innerHTML = '';
     practiceStartBtn.textContent = '🎯 Start practice';
     practiceBfsTrace = [];
+    practiceInsertTarget = null;
+    practiceInsertValue = null;
     document.getElementById('bfsTracePracticeWrap').style.display = 'none';
     document.getElementById('bfsTracePracticeBody').innerHTML = '';
     revealAllValues();
@@ -1063,18 +1253,25 @@
       btn.classList.add('active');
       activeType = btn.dataset.t;
       const isSearch = activeType === 'search';
+      const isInsert = activeType === 'insert';
       pseudoBox.innerHTML = PSEUDO[activeType].replace(/\n/g, '<br>');
-      searchTargetRow.style.display = isSearch ? 'block' : 'none';
-      secondaryWrap.style.display = isSearch ? 'none' : '';
+      searchTargetRow.style.display = (isSearch || isInsert) ? 'block' : 'none';
+      searchTargetLabel.textContent = isSearch ? 'Target value to search for' : 'Value to insert';
+      searchTargetInput.placeholder = valueMode === 'number' ? 'e.g. 42' : 'e.g. 0304';
+      secondaryWrap.style.display = (isSearch || isInsert) ? 'none' : '';
       searchRevealBtn.style.display = isSearch ? 'block' : 'none';
       declareNotFoundBtn.style.display = isSearch ? 'block' : 'none';
       searchPracticeSetRow.style.display = isSearch ? 'block' : 'none';
-      orderChipsLabel.textContent = isSearch ? 'Search path so far' : 'Visit order so far';
-      practiceInstructions.innerHTML = isSearch
-        ? 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target. If the real path runs out before you find it, use <b>Declare "not in this tree"</b>.'
-        : `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
+      orderChipsLabel.textContent = isSearch ? 'Search path so far' : (isInsert ? 'Insert path so far' : 'Visit order so far');
+      if(isSearch){
+        practiceInstructions.innerHTML = 'Single-click a node to <b>reveal</b> its value (free look, like the class "Click to Reveal" activity). Double-click nodes, in order, to <b>select</b> them as the correct binary-search path to your target. If the real path runs out before you find it, use <b>Declare "not in this tree"</b>.';
+      } else if(isInsert){
+        practiceInstructions.innerHTML = 'Double-click nodes, in order, to <b>select</b> them along the correct comparison path for the value you\'re inserting, then double-click the dashed <b>"+"</b> slot to create the new node there.';
+      } else {
+        practiceInstructions.innerHTML = `Single-click a node to <b>visit</b> (just preview it). Double-click nodes, in order, to <b>select</b> them for the correct ${TYPE_LABEL[activeType]} traversal — just like the class "unplugged" activity.`;
+      }
       resetPracticeUI();
-      clearHighlights();
+      renderTree();
       resetWatch();
     });
   });
